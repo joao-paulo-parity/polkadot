@@ -2,8 +2,8 @@ from rust:1.54.0-slim-bullseye
 
 env RUST_TARGET=x86_64-unknown-linux-musl \
     APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends" \
-    GCC=musl-gcc \
-    LLD=musl-lld \
+    CC=musl-gcc \
+    CXX=g++ \
     PKG_CONFIG_ALL_STATIC=true \
     PKG_CONFIG_ALLOW_CROSS=true \
     OPENSSL_STATIC=true
@@ -23,10 +23,10 @@ copy . /app
 
 workdir /app
 
-run CC="$GCC" \
-  CXX="g++" \
-  TARGET_CC="$GCC" \
-  TARGET_CXX="g++" \
+run CC="$CC" \
+  TARGET_CC="$CC" \
+  CXX="$CXX" \
+  TARGET_CXX="$CXX" \
   RUST_BACKTRACE=1 \
   RUSTC_WRAPPER= \
   WASM_BUILD_NO_COLOR=1 \
