@@ -1,32 +1,31 @@
-from rust:1.54.0-alpine3.14
+from rust:1.54.0-slim-bullseye
 
-run toolchain="nightly-$(apk --print-arch)-unknown-linux-musl"; \
-  rustup toolchain install "$toolchain" && \
-  rustup target add wasm32-unknown-unknown --toolchain "$toolchain"
+env RUST_TARGET=x86_64-unknown-linux-musl \
+    APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends" \
+    GCC=musl-gcc
 
-# Needed for building RocksDB
-run apk add --no-cache \
-  --virtual .rocksdb-build-deps \
-  linux-headers python3 make gcc libc-dev g++
+run rustup target add "$RUST_TARGET" && \
+    rustup toolchain install --profile minimal nightly && \
+    rustup target add wasm32-unknown-unknown --toolchain nightly
 
-# Needed for building Substrate
-run apk add --no-cache \
-  openssl-dev openssl-libs-static protoc clang llvm-static llvm-dev \
-  clang-static clang-dev eudev-dev pkgconfig zlib-static libffi-dev \
-  ncurses-static
+# Used for Substrate
+run $APT_INSTALL \
+  zlib-dev libssl-dev libudev-dev pkg-config clang libclang-dev llvm musl \
+  musl-tools gcc libc-dev
 
 copy . /app
 
 workdir /app
 
-run gcc="$(apk --print-arch)-alpine-linux-musl-gcc"; \
-  CC="$gcc" \
-  CXX="$gcc" \
-  TARGET_CC="$gcc" \
-  TARGET_CXX="$gcc" \
+run ls /usr/bin/*.a
+
+run CC="$GCC" \
+  CXX="$GCC" \
+  TARGET_CC="$GCC" \
+  TARGET_CXX="$GCC" \
   PKG_CONFIG_ALLOW_CROSS=1 \
   PKG_CONFIG_ALL_STATIC=1 \
   RUST_BACKTRACE=1 \
   RUSTC_WRAPPER= \
   WASM_BUILD_NO_COLOR=1 \
-    cargo build --release --verbose
+    cargo build --target "$RUST_TARGET" --release --verbose
