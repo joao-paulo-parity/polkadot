@@ -22,7 +22,8 @@ run apk add --no-cache \
 # Needed for building Substrate
 run apk add --no-cache \
   openssl-dev openssl-libs-static protoc clang llvm-static llvm-dev \
-  clang-static clang-dev eudev-dev pkgconfig
+  clang-static clang-dev eudev-dev pkgconfig zlib-static libffi-dev \
+  ncurses-static
 
 copy . /app
 
