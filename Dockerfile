@@ -1,33 +1,47 @@
-from rust:1.54.0-slim-bullseye
+from messense/rust-musl-cross:x86_64-musl
 
-env RUST_TARGET=x86_64-unknown-linux-musl \
-    APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends" \
-    CC=musl-gcc \
-    CXX=g++ \
+env APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends" \
     PKG_CONFIG_ALL_STATIC=true \
-    PKG_CONFIG_ALLOW_CROSS=true \
-    OPENSSL_STATIC=true
+    OPENSSL_ARCH=linux-x86_64
 
-run rustup target add "$RUST_TARGET" && \
-    rustup toolchain install --profile minimal nightly && \
+RUN export CC=$TARGET_CC && \
+    export C_INCLUDE_PATH=$TARGET_C_INCLUDE_PATH && \
+    export LD=$TARGET-ld && \
+    echo "Building OpenSSL" && \
+    VERS=1.0.2u && \
+    CHECKSUM=ecd0c6ffb493dd06707d38b14bb4d8c2288bb7033735606569d8f90f89669d16 && \
+    curl -sqO https://www.openssl.org/source/openssl-$VERS.tar.gz && \
+    echo "$CHECKSUM openssl-$VERS.tar.gz" > checksums.txt && \
+    sha256sum -c checksums.txt && \
+    tar xzf openssl-$VERS.tar.gz && cd openssl-$VERS && \
+    ./Configure $OPENSSL_ARCH -fPIC --prefix=$TARGET_HOME && \
+    make -j$(nproc) && make install && \
+    cd .. && rm -rf openssl-$VERS.tar.gz openssl-$VERS checksums.txt
+
+ENV OPENSSL_DIR=$TARGET_HOME/ \
+    OPENSSL_INCLUDE_DIR=$TARGET_HOME/include/ \
+    DEP_OPENSSL_INCLUDE=$TARGET_HOME/include/ \
+    OPENSSL_LIB_DIR=$TARGET_HOME/lib/ \
+    OPENSSL_STATIC=1
+
+run rustup toolchain install --profile minimal nightly && \
     rustup target add wasm32-unknown-unknown --toolchain nightly
 
 run apt update
 
-# Used for Substrate
-run $APT_INSTALL \
-  zlib1g-dev libssl-dev libudev-dev pkg-config clang libclang-dev llvm musl \
-  musl-dev musl-tools gcc libc-dev make g++
+run $APT_INSTALL pkg-config
 
 copy . /app
 
 workdir /app
 
-run CC="$CC" \
-  TARGET_CC="$CC" \
-  CXX="$CXX" \
-  TARGET_CXX="$CXX" \
-  RUST_BACKTRACE=1 \
+run RUST_BACKTRACE=1 \
   RUSTC_WRAPPER= \
   WASM_BUILD_NO_COLOR=1 \
-    cargo build --target "$RUST_TARGET" --release --verbose
+  ROCKSDB_COMPILE=1 \
+  SNAPPY_COMPILE=1 \
+  LZ4_COMPILE=1 \
+  ZSTD_COMPILE=1 \
+  Z_COMPILE=1 \
+  BZ2_COMPILE=1 \
+  cargo build --target "$RUST_MUSL_CROSS_TARGET" --release --verbose
