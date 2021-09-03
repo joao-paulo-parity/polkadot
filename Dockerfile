@@ -1,7 +1,6 @@
 from rust:1.54.0-alpine3.14
 
-env  SUBSTRATE_HOST=x86_64-unknown-linux-musl \
-     CC=x86_64-alpine-linux-musl-gcc \
+env  CC=x86_64-alpine-linux-musl-gcc \
 	   CXX=x86_64-alpine-linux-musl-gcc \
 	   TARGET_CC=x86_64-alpine-linux-musl-gcc \
 	   TARGET_CXX=x86_64-alpine-linux-musl-gcc \
@@ -11,8 +10,9 @@ env  SUBSTRATE_HOST=x86_64-unknown-linux-musl \
 	   RUSTC_WRAPPER= \
      WASM_BUILD_NO_COLOR=1 
 
-run rustup toolchain install nightly-$SUBSTRATE_HOST
-run rustup target add wasm32-unknown-unknown --toolchain nightly
+run TOOLCHAIN="nightly-$(apk --print-arch)-unknown-linux-musl" ; \
+  rustup toolchain install "$TOOLCHAIN" && \
+  rustup target add wasm32-unknown-unknown --toolchain "$TOOLCHAIN"
 
 # Needed for building RocksDB
 run apk add --no-cache \
@@ -21,7 +21,8 @@ run apk add --no-cache \
 
 # Needed for building Substrate
 run apk add --no-cache \
-  openssl-dev protoc clang-libs clang
+  openssl-dev protoc clang llvm-static llvm-dev clang-static clang-dev \
+  eudev-dev pkgconfig
 
 copy . /app
 
