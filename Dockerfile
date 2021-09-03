@@ -1,18 +1,8 @@
 from rust:1.54.0-alpine3.14
 
-env  CC=x86_64-alpine-linux-musl-gcc \
-	   CXX=x86_64-alpine-linux-musl-gcc \
-	   TARGET_CC=x86_64-alpine-linux-musl-gcc \
-	   TARGET_CXX=x86_64-alpine-linux-musl-gcc \
-     PKG_CONFIG_ALLOW_CROSS=1 \
-	   PKG_CONFIG_ALL_STATIC=1 \
-	   RUST_BACKTRACE=1 \
-	   RUSTC_WRAPPER= \
-     WASM_BUILD_NO_COLOR=1 
-
-run TOOLCHAIN="nightly-$(apk --print-arch)-unknown-linux-musl" ; \
-  rustup toolchain install "$TOOLCHAIN" && \
-  rustup target add wasm32-unknown-unknown --toolchain "$TOOLCHAIN"
+run toolchain="nightly-$(apk --print-arch)-unknown-linux-musl"; \
+  rustup toolchain install "$toolchain" && \
+  rustup target add wasm32-unknown-unknown --toolchain "$toolchain"
 
 # Needed for building RocksDB
 run apk add --no-cache \
@@ -29,6 +19,14 @@ copy . /app
 
 workdir /app
 
-run gcc --version && \
-  clang --version && \
-  cargo build --release --verbose
+run gcc="$(apk --print-arch)-alpine-linux-musl-gcc"; \
+  CC="$gcc" \
+  CXX="$gcc" \
+  TARGET_CC="$gcc" \
+  TARGET_CXX="$gcc" \
+  PKG_CONFIG_ALLOW_CROSS=1 \
+  PKG_CONFIG_ALL_STATIC=1 \
+  RUST_BACKTRACE=1 \
+  RUSTC_WRAPPER= \
+  WASM_BUILD_NO_COLOR=1 \
+    cargo build --release --verbose
