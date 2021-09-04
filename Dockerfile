@@ -8,30 +8,30 @@ RUN apt update
 
 # ---- musl
 
-ARG RUST_MUSL_MAKE_VER=0.9.9 \
+ARG CROSS_MAKE_VERSION=0.9.9 \
   TARGET=x86_64-unknown-linux-musl \
   TARGET_HOME=/usr/local/musl/$TARGET
 
-RUN export MUSL_CROSS_MAKE_SOURCE=musl-cross-make.zip && \
-  export MUSL_CROSS_MAKE_FOLDER=musl-cross-make && \
-  cd /tmp && curl -Lsq -o $MUSL_CROSS_MAKE_SOURCE https://github.com/richfelker/musl-cross-make/archive/v$RUST_MUSL_MAKE_VER.zip && \
-  unzip -q $MUSL_CROSS_MAKE_SOURCE && rm $MUSL_CROSS_MAKE_SOURCE && \
-  cd $MUSL_CROSS_MAKE_FOLDER && \
+RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
+  export CROSS_MAKE_SOURCE=$CROSS_MAKE_FOLDER.zip && \
+  cd /tmp && curl -Lsq https://github.com/richfelker/musl-cross-make/archive/v$CROSS_MAKE_VERSION.zip -o $CROSS_MAKE_SOURCE && \
+  unzip -q $CROSS_MAKE_SOURCE && rm $CROSS_MAKE_SOURCE && \
+  cd $CROSS_MAKE_FOLDER && \
   echo "OUTPUT=/usr/local/musl\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++" | tee config.mak && \
   make -j$(nproc) && make install && \
   ln -s /usr/local/musl/bin/$TARGET-strip /usr/local/musl/bin/musl-strip && \
-  cd .. && rm -rf $MUSL_CROSS_MAKE_FOLDER
+  cd .. && rm -rf $CROSS_MAKE_FOLDER
 
 ENV CC_EXE=$TARGET-gcc \
   C_INCLUDE_PATH=$TARGET_HOME/include/ \
-  CC_STATIC_FLAGS="-static -static-libstdc++ -static-libgcc"
+  CC_STATIC_FLAGS="-static -static-libstdc++ -static-libgcc" \
   CC="$CC_EXE $_CC_STATIC_FLAGS" \
   CXX_EXE=$TARGET-g++ \
   CXX="$CXX_EXE $TARGET_CC_STATIC_FLAGS" \
   LD="$TARGET-ld" \
   LDFLAGS="-L$TARGET_HOME/lib"
 
-# ---- ZLib
+# ---- ZLib (necessary to build OpenSSL)
 
 ARG ZLIB_VERSION=1.2.11
 
@@ -67,7 +67,7 @@ ENV OPENSSL_STATIC=1 \
   OPENSSL_INCLUDE_DIR=$TARGET_HOME/include/ \
   DEP_OPENSSL_INCLUDE=$TARGET_HOME/include/ \
   OPENSSL_LIB_DIR=$TARGET_HOME/lib/ \
-  LDFLAGS="-lssl"
+  LDFLAGS="$LDFLAGS -lssl"
 
 # ---- Substrate
 
@@ -88,11 +88,11 @@ copy . /app
 workdir /app
 
 run RUST_BACKTRACE=1 \
-  RUSTC_WRAPPER= \
   WASM_BUILD_NO_COLOR=1 \
+  RUSTC_WRAPPER= \
   ROCKSDB_COMPILE=1 \
   SNAPPY_COMPILE=1 \
   LZ4_COMPILE=1 \
   ZSTD_COMPILE=1 \
   BZ2_COMPILE=1 \
-  cargo build --target "$TARGET" --release --verbose
+  cargo build --target $TARGET --release --verbose
