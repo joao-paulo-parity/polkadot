@@ -1,9 +1,11 @@
 from messense/rust-musl-cross:x86_64-musl
 
-env APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends" \
+env TARGET=x86_64-unknown-linux-musl \
+    APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends" \
     PKG_CONFIG_ALL_STATIC=true \
     PKG_CONFIG_ALLOW_CROSS=true \
-    OPENSSL_ARCH=linux-x86_64
+    OPENSSL_ARCH=linux-x86_64 \
+    LDFLAGS="-static -static-libstdc++ -static-libgcc -L$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib"
 
 RUN export CC="$TARGET_CC -static" && \
     export C_INCLUDE_PATH=$TARGET_C_INCLUDE_PATH && \
@@ -32,14 +34,7 @@ run apt update
 
 run $APT_INSTALL pkg-config
 
-run echo "
-[target.$TARGET]
-linker = \"$TARGET-gcc\"
-rustflags = [
-  \"-Clink-arg=-static\",
-  \"-Clink-arg=-static-libstdc++\",
-  \"-Clink-arg=-static-libgcc\"
-]" > /root/.cargo/config
+run echo "[target.$TARGET]\nlinker = \"$TARGET-gcc\"\nrustflags = [\"-Clink-arg=-static\",\"-Clink-arg=-static-libstdc++\",\"-Clink-arg=-static-libgcc\",\"-Clink-arg=-L$TARGET_HOME/lib\",\"-Clink-arg=-Wl,-rpath,$TARGET_HOME/lib\"]" > /root/.cargo/config
 
 copy . /app
 
@@ -52,11 +47,10 @@ run RUST_BACKTRACE=1 \
   SNAPPY_COMPILE=1 \
   LZ4_COMPILE=1 \
   ZSTD_COMPILE=1 \
-  Z_COMPILE=1 \
+  Z_STATIC=1 \
+  Z_LIB_DIR="$TARGET_HOME/lib" \
   BZ2_COMPILE=1 \
   CC="$TARGET_CC -static" \
   CXX="$TARGET_CXX -static" \
   LD="$TARGET-ld" \
-  CC_x86_64_unknown_linux_musl="$TARGET_CC -static" \
-  CXX_x86_64_unknown_linux_musl="$TARGET_CXX -static" \
   cargo build --target "$RUST_MUSL_CROSS_TARGET" --release --verbose
