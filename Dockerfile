@@ -1,10 +1,18 @@
-FROM rust:1.54.0-bullseye
+FROM rust:1.54.0-slim-buster
 
 ARG APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt update
+# --- Setup for building dependencies
+
+RUN apt update && \
+  $APT_INSTALL curl unzip cmake make build-essential wget && \
+  make --version && \
+  curl --version && \
+  unzip -v && \
+  cmake --version && \
+  wget --version
 
 # ---- musl
 
@@ -20,22 +28,25 @@ RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   echo "OUTPUT=/usr/local/musl\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++" | tee config.mak && \
   make -j$(nproc) && make install && \
   ln -s /usr/local/musl/bin/$TARGET-strip /usr/local/musl/bin/musl-strip && \
+  $TARGET-gcc --version && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
 
-ENV CC_EXE=$TARGET-gcc \
+ENV CC=$TARGET-gcc \
   C_INCLUDE_PATH=$TARGET_HOME/include/ \
-  CC_STATIC_FLAGS="-static -static-libstdc++ -static-libgcc" \
-  CC="$CC_EXE $_CC_STATIC_FLAGS" \
-  CXX_EXE=$TARGET-g++ \
-  CXX="$CXX_EXE $TARGET_CC_STATIC_FLAGS" \
-  LD="$TARGET-ld" \
-  LDFLAGS="-L$TARGET_HOME/lib"
+  CPLUS_INCLUDE_PATH=$C_INCLUDE_PATH \
+  CFLAGS="-static -static-libstdc++ -static-libgcc -I$C_INCLUDE_PATH" \
+  CXX=$TARGET-g++ \
+  CXXFLAGS=$CFLAGS \
+  CPPFLAGS=$CFLAGS \
+  LD=$TARGET-ld \
+  LDFLAGS="-L$TARGET_HOME/lib" \
+  PATH=/usr/local/musl/bin:$PATH
 
 # ---- ZLib (necessary to build OpenSSL)
 
 ARG ZLIB_VERSION=1.2.11
 
-RUN export ZLIB_FOLDER=zlib-$ZLIB_VERSION && \
+RUN echo "$PATH" && which $CC && export ZLIB_FOLDER=zlib-$ZLIB_VERSION && \
   export ZLIB_SOURCE=$ZLIB_FOLDER.tar.gz && \
   cd /tmp && curl -sqLO https://zlib.net/$ZLIB_SOURCE && \
   tar xzf $ZLIB_SOURCE && rm $ZLIB_SOURCE && \
@@ -81,7 +92,7 @@ RUN $APT_INSTALL pkg-config
 
 # use musl-gcc as the linker
 # https://github.com/rust-lang/rust/issues/47693#issuecomment-360021149
-run echo "[target.$TARGET]\nlinker = \"$TARGET-gcc\"\nrustflags = [\"-Clink-arg=-static\",\"-Clink-arg=-static-libstdc++\",\"\"-Clink-arg=-static-libgcc\",\"-Clink-arg=-Wl,-L$TARGET_HOME/lib\",\"-Clink-arg=-WL,-lz\",\"-Clink-arg=-WL,-lssl\"]" > $CARGO_HOME/config
+run echo "[target.$TARGET]\nlinker = \"$CC\"\nrustflags = [\"-Clink-arg=-static\",\"-Clink-arg=-static-libstdc++\",\"\"-Clink-arg=-static-libgcc\",\"-Clink-arg=-Wl,-L$TARGET_HOME/lib\",\"-Clink-arg=-WL,-lz\",\"-Clink-arg=-WL,-lssl\"]" > $CARGO_HOME/config
 
 copy . /app
 
