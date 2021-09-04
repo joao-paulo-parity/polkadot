@@ -1,19 +1,26 @@
 FROM rust:1.54.0-bullseye
 
+ARG APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends"
+
 ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt update
+
+# ---- musl
 
 ARG RUST_MUSL_MAKE_VER=0.9.9 \
     TARGET=x86_64-unknown-linux-musl \
     TARGET_HOME=/usr/local/musl/$TARGET
 
-RUN export MUSL_CROSS_MAKE_ZIP=musl-cross-make.zip && \
-  curl -Lsq -o $MUSL_CROSS_MAKE_ZIP https://github.com/richfelker/musl-cross-make/archive/v$RUST_MUSL_MAKE_VER.zip && \
-  unzip -q $MUSL_CROSS_MAKE_ZIP && rm $MUSL_CROSS_MAKE_ZIP && \
-  cd $MUSL_CROSS_MAKE_ZIP && \
+RUN export MUSL_CROSS_MAKE_SOURCE=musl-cross-make.zip && \
+  export MUSL_CROSS_MAKE_FOLDER=musl-cross-make && \
+  cd /tmp && curl -Lsq -o $MUSL_CROSS_MAKE_SOURCE https://github.com/richfelker/musl-cross-make/archive/v$RUST_MUSL_MAKE_VER.zip && \
+  unzip -q $MUSL_CROSS_MAKE_SOURCE && rm $MUSL_CROSS_MAKE_SOURCE && \
+  cd $MUSL_CROSS_MAKE_FOLDER && \
   echo "OUTPUT=/usr/local/musl\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++" | tee config.mak && \
   make -j$(nproc) && make install && \
   ln -s /usr/local/musl/bin/$TARGET-strip /usr/local/musl/bin/musl-strip && \
-  cd .. && rm -rf $MUSL_CROSS_MAKE_ZIP
+  cd .. && rm -rf $MUSL_CROSS_MAKE_FOLDER
 
 ENV CC_EXE=$TARGET-gcc \
     C_INCLUDE_PATH=$TARGET_HOME/include/ \
@@ -25,6 +32,7 @@ ENV CC_EXE=$TARGET-gcc \
     LDFLAGS="-L$TARGET_HOME/lib"
 
 # ---- ZLib
+
 ARG ZLIB_VERSION=1.2.11
 
 RUN export ZLIB_FOLDER=zlib-$ZLIB_VERSION && \
@@ -36,7 +44,9 @@ RUN export ZLIB_FOLDER=zlib-$ZLIB_VERSION && \
   make -j$(nproc) && make install && \
   cd .. && rm -rf $ZLIB_FOLDER
 
-ENV LDFLAGS="$LDFLAGS -lz"
+ENV LDFLAGS="$LDFLAGS -lz" \
+    Z_STATIC=1 \
+    Z_LIB_DIR=$TARGET_HOME/lib
 
 # ---- OpenSSL
 
@@ -52,22 +62,26 @@ RUN export OPENSSL_FOLDER=openssl-$OPENSSL_VERSION && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf $OPENSSL_FOLDER
 
-ENV OPENSSL_DIR=$TARGET_HOME/ \
+ENV OPENSSL_STATIC=1 \
+    OPENSSL_DIR=$TARGET_HOME/ \
     OPENSSL_INCLUDE_DIR=$TARGET_HOME/include/ \
     DEP_OPENSSL_INCLUDE=$TARGET_HOME/include/ \
     OPENSSL_LIB_DIR=$TARGET_HOME/lib/ \
-    OPENSSL_STATIC=1
+    LDFLAGS="-lssl"
 
-run rustup toolchain install --profile minimal nightly && \
+# ---- Substrate
+
+RUN rustup toolchain install --profile minimal nightly && \
     rustup target add wasm32-unknown-unknown --toolchain nightly
 
-run apt update
+ENV PKG_CONFIG_ALL_STATIC=true \
+  PKG_CONFIG_ALLOW_CROSS=true
 
-run $APT_INSTALL pkg-config
+RUN $APT_INSTALL pkg-config
 
 # use musl-gcc as the linker
 # https://github.com/rust-lang/rust/issues/47693#issuecomment-360021149
-run echo "[target.$TARGET]\nlinker = \"$TARGET-gcc\"\nrustflags = [\"-Clink-arg=-static\",\"-Clink-arg=-static-libstdc++\",\"\"-Clink-arg=-static-libgcc\",\"-Clink-arg=-Wl,-L$TARGET_HOME/lib\",\"-Clink-arg=-WL,-lz\"]" > /root/.cargo/config
+run echo "[target.$TARGET]\nlinker = \"$TARGET-gcc\"\nrustflags = [\"-Clink-arg=-static\",\"-Clink-arg=-static-libstdc++\",\"\"-Clink-arg=-static-libgcc\",\"-Clink-arg=-Wl,-L$TARGET_HOME/lib\",\"-Clink-arg=-WL,-lz\",\"-Clink-arg=-WL,-lssl\"]" > $CARGO_HOME/config
 
 copy . /app
 
@@ -81,8 +95,4 @@ run RUST_BACKTRACE=1 \
   LZ4_COMPILE=1 \
   ZSTD_COMPILE=1 \
   BZ2_COMPILE=1 \
-  CC="$TARGET_CC -static" \
-  CXX="$TARGET_CXX -static" \
-  Z_STATIC=1 \
-  Z_LIB_DIR="$TARGET_HOME/lib" \
   cargo build --target "$TARGET" --release --verbose
