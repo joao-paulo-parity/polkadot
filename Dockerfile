@@ -5,7 +5,8 @@ env TARGET=x86_64-unknown-linux-musl \
     PKG_CONFIG_ALL_STATIC=true \
     PKG_CONFIG_ALLOW_CROSS=true \
     OPENSSL_ARCH=linux-x86_64 \
-    LDFLAGS="-static -static-libstdc++ -static-libgcc -L$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib"
+    LD="$TARGET-ld" \
+    LDFLAGS="-L$TARGET_HOME/lib -rpath-link $TARGET_HOME/lib -lz"
 
 RUN export CC="$TARGET_CC -static" && \
     export C_INCLUDE_PATH=$TARGET_C_INCLUDE_PATH && \
@@ -34,7 +35,7 @@ run apt update
 
 run $APT_INSTALL pkg-config
 
-run echo "[target.$TARGET]\nlinker = \"$TARGET-gcc\"\nrustflags = [\"-Clink-arg=-static\",\"-Clink-arg=-static-libstdc++\",\"-Clink-arg=-static-libgcc\",\"-Clink-arg=-L$TARGET_HOME/lib\",\"-Clink-arg=-Wl,-rpath,$TARGET_HOME/lib\"]" > /root/.cargo/config
+run echo "[target.$TARGET]\nlinker = \"$TARGET-ld\"\nrustflags = [\"-Clink-arg=-L$TARGET_HOME/lib\",\"-Clink-arg=-rpath-link $TARGET_HOME/lib\",\"-Clink-arg=-lz\"]" > /root/.cargo/config
 
 copy . /app
 
@@ -47,10 +48,9 @@ run RUST_BACKTRACE=1 \
   SNAPPY_COMPILE=1 \
   LZ4_COMPILE=1 \
   ZSTD_COMPILE=1 \
-  Z_STATIC=1 \
-  Z_LIB_DIR="$TARGET_HOME/lib" \
   BZ2_COMPILE=1 \
   CC="$TARGET_CC -static" \
   CXX="$TARGET_CXX -static" \
-  LD="$TARGET-ld" \
+  Z_STATIC=1 \
+  Z_LIB_DIR="$TARGET_HOME/lib" \
   cargo build --target "$RUST_MUSL_CROSS_TARGET" --release --verbose
