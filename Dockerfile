@@ -2,9 +2,10 @@ from messense/rust-musl-cross:x86_64-musl
 
 env APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends" \
     PKG_CONFIG_ALL_STATIC=true \
+    PKG_CONFIG_ALLOW_CROSS=true \
     OPENSSL_ARCH=linux-x86_64
 
-RUN export CC=$TARGET_CC && \
+RUN export CC="$TARGET_CC -static" && \
     export C_INCLUDE_PATH=$TARGET_C_INCLUDE_PATH && \
     export LD=$TARGET-ld && \
     echo "Building OpenSSL" && \
@@ -14,7 +15,7 @@ RUN export CC=$TARGET_CC && \
     echo "$CHECKSUM openssl-$VERS.tar.gz" > checksums.txt && \
     sha256sum -c checksums.txt && \
     tar xzf openssl-$VERS.tar.gz && cd openssl-$VERS && \
-    ./Configure $OPENSSL_ARCH -fPIC --prefix=$TARGET_HOME && \
+    CFLAGS=-fPIC ./Configure $OPENSSL_ARCH --prefix=$TARGET_HOME && \
     make -j$(nproc) && make install && \
     cd .. && rm -rf openssl-$VERS.tar.gz openssl-$VERS checksums.txt
 
@@ -31,6 +32,15 @@ run apt update
 
 run $APT_INSTALL pkg-config
 
+run echo "
+[target.$TARGET]
+linker = \"$TARGET-gcc\"
+rustflags = [
+  \"-Clink-arg=-static\",
+  \"-Clink-arg=-static-libstdc++\",
+  \"-Clink-arg=-static-libgcc\"
+]" > /root/.cargo/config
+
 copy . /app
 
 workdir /app
@@ -44,4 +54,9 @@ run RUST_BACKTRACE=1 \
   ZSTD_COMPILE=1 \
   Z_COMPILE=1 \
   BZ2_COMPILE=1 \
+  CC="$TARGET_CC -static" \
+  CXX="$TARGET_CXX -static" \
+  LD="$TARGET-ld" \
+  CC_x86_64_unknown_linux_musl="$TARGET_CC -static" \
+  CXX_x86_64_unknown_linux_musl="$TARGET_CXX -static" \
   cargo build --target "$RUST_MUSL_CROSS_TARGET" --release --verbose
