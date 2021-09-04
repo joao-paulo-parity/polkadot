@@ -9,8 +9,8 @@ RUN apt update
 # ---- musl
 
 ARG RUST_MUSL_MAKE_VER=0.9.9 \
-    TARGET=x86_64-unknown-linux-musl \
-    TARGET_HOME=/usr/local/musl/$TARGET
+  TARGET=x86_64-unknown-linux-musl \
+  TARGET_HOME=/usr/local/musl/$TARGET
 
 RUN export MUSL_CROSS_MAKE_SOURCE=musl-cross-make.zip && \
   export MUSL_CROSS_MAKE_FOLDER=musl-cross-make && \
@@ -23,13 +23,13 @@ RUN export MUSL_CROSS_MAKE_SOURCE=musl-cross-make.zip && \
   cd .. && rm -rf $MUSL_CROSS_MAKE_FOLDER
 
 ENV CC_EXE=$TARGET-gcc \
-    C_INCLUDE_PATH=$TARGET_HOME/include/ \
-    CC_STATIC_FLAGS="-static -static-libstdc++ -static-libgcc"
-    CC="$CC_EXE $_CC_STATIC_FLAGS" \
-    CXX_EXE=$TARGET-g++ \
-    CXX="$CXX_EXE $TARGET_CC_STATIC_FLAGS" \
-    LD="$TARGET-ld" \
-    LDFLAGS="-L$TARGET_HOME/lib"
+  C_INCLUDE_PATH=$TARGET_HOME/include/ \
+  CC_STATIC_FLAGS="-static -static-libstdc++ -static-libgcc"
+  CC="$CC_EXE $_CC_STATIC_FLAGS" \
+  CXX_EXE=$TARGET-g++ \
+  CXX="$CXX_EXE $TARGET_CC_STATIC_FLAGS" \
+  LD="$TARGET-ld" \
+  LDFLAGS="-L$TARGET_HOME/lib"
 
 # ---- ZLib
 
@@ -45,8 +45,8 @@ RUN export ZLIB_FOLDER=zlib-$ZLIB_VERSION && \
   cd .. && rm -rf $ZLIB_FOLDER
 
 ENV LDFLAGS="$LDFLAGS -lz" \
-    Z_STATIC=1 \
-    Z_LIB_DIR=$TARGET_HOME/lib
+  Z_STATIC=1 \
+  Z_LIB_DIR=$TARGET_HOME/lib
 
 # ---- OpenSSL
 
@@ -54,25 +54,25 @@ ARG OPENSSL_VERSION=1.0.2u \
     OPENSSL_ARCH=linux-x86_64
 
 RUN export OPENSSL_FOLDER=openssl-$OPENSSL_VERSION && \
-    export OPENSSL_SOURCE=$OPENSSL_FOLDER.tar.gz && \
-    cd /tmp && curl -sqO https://www.openssl.org/source/$OPENSSL_SOURCE && \
-    tar xzf $OPENSSL_SOURCE && rm $OPENSSL_SOURCE && \
-    cd $OPENSSL_FOLDER && \
-    ./Configure $OPENSSL_ARCH -fPIC --prefix=$TARGET_HOME && \
-    make -j$(nproc) && make install && \
-    cd .. && rm -rf $OPENSSL_FOLDER
+  export OPENSSL_SOURCE=$OPENSSL_FOLDER.tar.gz && \
+  cd /tmp && curl -sqO https://www.openssl.org/source/$OPENSSL_SOURCE && \
+  tar xzf $OPENSSL_SOURCE && rm $OPENSSL_SOURCE && \
+  cd $OPENSSL_FOLDER && \
+  ./Configure $OPENSSL_ARCH -fPIC --prefix=$TARGET_HOME && \
+  make -j$(nproc) && make install && \
+  cd .. && rm -rf $OPENSSL_FOLDER
 
 ENV OPENSSL_STATIC=1 \
-    OPENSSL_DIR=$TARGET_HOME/ \
-    OPENSSL_INCLUDE_DIR=$TARGET_HOME/include/ \
-    DEP_OPENSSL_INCLUDE=$TARGET_HOME/include/ \
-    OPENSSL_LIB_DIR=$TARGET_HOME/lib/ \
-    LDFLAGS="-lssl"
+  OPENSSL_DIR=$TARGET_HOME/ \
+  OPENSSL_INCLUDE_DIR=$TARGET_HOME/include/ \
+  DEP_OPENSSL_INCLUDE=$TARGET_HOME/include/ \
+  OPENSSL_LIB_DIR=$TARGET_HOME/lib/ \
+  LDFLAGS="-lssl"
 
 # ---- Substrate
 
 RUN rustup toolchain install --profile minimal nightly && \
-    rustup target add wasm32-unknown-unknown --toolchain nightly
+  rustup target add wasm32-unknown-unknown --toolchain nightly
 
 ENV PKG_CONFIG_ALL_STATIC=true \
   PKG_CONFIG_ALLOW_CROSS=true
