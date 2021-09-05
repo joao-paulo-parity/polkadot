@@ -22,8 +22,6 @@ ENV CROSS_MAKE_VERSION=0.9.9 \
   TARGET=x86_64-unknown-linux-musl \
   TARGET_HOME=/usr/local/musl/$TARGET
 
-RUN echo "$TARGET_HOME"
-
 RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   export CROSS_MAKE_SOURCE=$CROSS_MAKE_FOLDER.zip && \
   cd /tmp && curl -Lsq https://github.com/richfelker/musl-cross-make/archive/v$CROSS_MAKE_VERSION.zip -o $CROSS_MAKE_SOURCE && \
@@ -32,14 +30,16 @@ RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   echo "OUTPUT=/usr/local/musl\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++" | tee config.mak && \
   make -j$(nproc) && make install && \
   ln -s /usr/local/musl/bin/$TARGET-strip /usr/local/musl/bin/musl-strip && \
+  ln -s /usr/local/musl/bin/$TARGET-gcc /usr/local/musl/bin/gcc && \
+  ln -s /usr/local/musl/bin/$TARGET-g++ /usr/local/musl/bin/g++ && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
 
-ENV CC=$TARGET-gcc \
-  CXX=$TARGET-g++ \
+ENV CC=/usr/local/musl/bin/gcc \
+  CXX=/usr/local/musl/bin/g++ \
   C_INCLUDE_PATH=$TARGET_HOME/include \
   CPLUS_INCLUDE_PATH=$TARGET_HOME/include \
-  CFLAGS="-static -static-libstdc++ -static-libgcc -I$TARGET_HOME/include" \
-  CXXFLAGS="-static -static-libstdc++ -static-libgcc -I$TARGET_HOME/include" \
+  CFLAGS="-v -static -fPIC -fno-pie -no-pie -lgcc -lstdc++ -lm -lc -I$TARGET_HOME/include -Wl,-M -Wl,-L,$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib -Wl,--no-dynamic-linker" \
+  CXXFLAGS="-v -static -fPIC -fno-pie -no-pie -lgcc -lstdc++ -lm -lc -I$TARGET_HOME/include -Wl,-M -Wl,-L,$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib -Wl,--no-dynamic-linker" \
   LD=$TARGET-ld \
   LDFLAGS="-L$TARGET_HOME/lib" \
   LD_RUN_PATH=$TARGET_HOME/lib \
@@ -125,14 +125,16 @@ RUN export NCURSES_FOLDER=ncurses-$NCURSES_VERSION && \
   cd $NCURSES_FOLDER && \
   ./configure --build=$CBUILD --host=$CHOST \
     --enable-widec \
+    --without-ada \
     --without-develop \
     --without-progs \
     --without-tests \
     --without-cxx \
+    --without-cxx-binding \
     --without-dlsym \
     --without-tests \
     --disable-rpath-hack \
-    --without-cxx-binding \
+    --with-build-cc=/usr/bin/gcc \
     --enable-static --disable-shared \
     --prefix=$TARGET_HOME && \
   make -j$(nproc) && make install && \
@@ -150,11 +152,19 @@ ENV PKG_CONFIG_ALL_STATIC=true \
 # Clang needs to be installed for the C++ headers to be available, even though
 # the binary itself is not actually used
 # https://github.com/rust-rocksdb/rust-rocksdb/issues/174#issuecomment-537326461
-RUN $APT_INSTALL pkg-config libclang-dev clang
+RUN $APT_INSTALL pkg-config libclang-dev clang file
 
-# use musl-gcc as the linker
-# https://github.com/rust-lang/rust/issues/47693#issuecomment-360021149
-run echo "[target.$TARGET]\nlinker = \"$CC\"\nrustflags = [\"-Clink-arg=-static\",\"-Clink-arg=-static-libstdc++\",\"-Clink-arg=-static-libgcc\",\"-Clink-arg=-I,$TARGET_HOME/include\",\"-Clink-arg=-Wl,-L,$TARGET_HOME/lib\",\"-Clink-arg=-Wl,-rpath,$TARGET_HOME/lib\"]" > $CARGO_HOME/config
+ENV WRAPPED_CC=/usr/bin/__cc__ \
+  WRAPPED_CXX=/usr/bin/__cxx__
+
+run echo "#!/bin/bash\n$CC $CFLAGS \"$@\"" > $WRAPPED_CC && \
+  chmod +x $WRAPPED_CC && \
+  echo "[target.$TARGET]\nlinker = \"$WRAPPED_CC\"" > $CARGO_HOME/config && \
+  echo "#!/bin/bash\n$CXX $CXXFLAGS \"$@\"" > $WRAPPED_CXX && \
+  chmod +x $WRAPPED_CXX
+
+# use musl-gcc as the linker: https://github.com/rust-lang/rust/issues/47693#issuecomment-360021149
+#run echo "[target.$TARGET]\nlinker = \"$CC\"\nrustflags = [\"-Clink-arg=-static\",\"-Clink-arg=-v\",\"-Wl,-M\",\"-Clink-arg=-lgcc\",\"-Clink-arg=-lstdc++\",\"-Clink-arg=-lm\",\"-Clink-arg=-lc\",\"-Clink-arg=-lgcc_s\",\"-Clink-arg=-I$TARGET_HOME/include\",\"-Clink-arg=-Wl,-L,$TARGET_HOME/lib\",\"-Clink-arg=-Wl,-rpath,$TARGET_HOME/lib\"]" > $CARGO_HOME/config
 
 copy . /app
 
@@ -170,5 +180,10 @@ run RUST_BACKTRACE=1 \
   LZ4_COMPILE=1 \
   ZSTD_COMPILE=1 \
   BZ2_COMPILE=1 \
-  LIBCLANG_STATIC_PATH= \
+  CC="$WRAPPED_CC" \
+  CXX="$WRAPPED_CXX" \
   cargo build --target $TARGET --release --verbose
+
+run ldd /app/target/x86_64-unknown-linux-musl/release/polkadot
+
+#run rm -rf *
