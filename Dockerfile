@@ -60,7 +60,7 @@ ENV LD=$CC
 # musl compiled with musl-cross-make already adds the relevant includes and
 # library paths by default; nostdinc + nostdinc++ should be used to ensure
 # _other_ paths are not looked at, though
-RUN export CFLAGS="-v -nostartfiles -nostdinc -Bstatic -static -fPIC -Wl,-M -Wl,-L,$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib -Wl,--no-dynamic-linker -lstdc++ -lm -lc -lgcc $TARGET_HOME/lib/crt1.o" && \
+RUN export CFLAGS="-v -nostartfiles -nostdinc -Bstatic -static -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-L,$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib -Wl,--no-dynamic-linker -lstdc++ -lm -lc -lgcc $TARGET_HOME/lib/crt1.o" && \
   echo "#!/bin/sh\n$CC_EXE $CFLAGS \"\$@\"" > $CC && \
   chmod +x $CC && \
   echo "#!/bin/sh\n$CXX_EXE $CFLAGS -nostdinc++ \"\$@\"" > $CXX && \
@@ -156,6 +156,43 @@ RUN export NCURSES_FOLDER=ncurses-$NCURSES_VERSION && \
   make -j$(nproc) && make install && \
   cd .. && rm -rf $NCURSES_FOLDER
 
+# ---- Libunwind (for Jemalloc)
+
+RUN $APT_INSTALL autoconf automake autotools-dev libtool
+
+ARG LIBUNWIND_VERSION=1.6.0-rc2
+
+RUN export LIBUNWIND_FOLDER=libunwind-$LIBUNWIND_VERSION && \
+  export LIBUNWIND_SOURCE=$LIBUNWIND_FOLDER.tar.gz && \
+  echo "https://github.com/libunwind/libunwind/releases/download/v$LIBUNWIND_VERSION/$LIBUNWIND_SOURCE" && \
+  cd /tmp && curl -sqLO https://github.com/libunwind/libunwind/releases/download/v$LIBUNWIND_VERSION/$LIBUNWIND_SOURCE && \
+  tar xzf $LIBUNWIND_SOURCE && rm $LIBUNWIND_SOURCE && \
+  cd $LIBUNWIND_FOLDER && \
+  autoreconf -i && \
+  ./configure \
+    --enable-static \
+    --disable-shared \
+    --prefix=$TARGET_HOME && \
+  make -j$(nproc) && make install prefix=$TARGET_HOME && \
+  cd .. && rm -rf $LIBUNWIND_FOLDER
+
+# ---- Jemalloc
+
+ARG JEMALLOC_VERSION=5.2.1
+
+RUN export JEMALLOC_FOLDER=jemalloc-$JEMALLOC_VERSION && \
+  export JEMALLOC_SOURCE=$JEMALLOC_FOLDER.tar.bz2 && \
+  cd /tmp && curl -sqLO https://github.com/jemalloc/jemalloc/releases/download/$JEMALLOC_VERSION/$JEMALLOC_SOURCE && \
+  tar xzf $JEMALLOC_SOURCE && rm $JEMALLOC_SOURCE && \
+  cd $JEMALLOC_FOLDER && \
+  ./configure \
+    --with-static-libunwind=$TARGET_HOME/lunwind.a \
+    --disable-libdl \
+    --disable-initial-exec-tls \
+    --prefix=$TARGET_HOME && \
+  make -j$(nproc) && make install && \
+  cd .. && rm -rf $JEMALLOC_FOLDER
+
 # ---- Substrate
 
 RUN rustup target add $TARGET && \
@@ -172,7 +209,7 @@ copy . /app
 
 workdir /app
 
-run echo "[target.$TARGET]\nlinker = \"/app/ld_wrapper\"" > $CARGO_HOME/config
+run echo "#!/bin/bash\n$CC_EXE -v -nostartfiles -nostdinc -Bstatic -static -fPIC -Wl,-M -Wl,-L,$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib -Wl,--no-dynamic-linker -lstdc++ -lm -lc -lgcc \"$@\"" > /app/ld_wrapper && chmod +x /app/ld_wrapper && echo "[target.$TARGET]\nlinker = \"/app/ld_wrapper\"" > $CARGO_HOME/config
 
 run RUST_BACKTRACE=full \
   WASM_BUILD_NO_COLOR=1 \
