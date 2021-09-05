@@ -158,23 +158,31 @@ RUN export NCURSES_FOLDER=ncurses-$NCURSES_VERSION && \
 
 # ---- Libunwind (for Jemalloc)
 
-RUN $APT_INSTALL autoconf automake autotools-dev libtool
+RUN $APT_INSTALL ninja-build cmake
 
-ARG LIBUNWIND_VERSION=1.6.0-rc2
+ARG LLVM_VERSION=12.0.1
 
-RUN export LIBUNWIND_FOLDER=libunwind-$LIBUNWIND_VERSION && \
-  export LIBUNWIND_SOURCE=$LIBUNWIND_FOLDER.tar.gz && \
-  echo "https://github.com/libunwind/libunwind/releases/download/v$LIBUNWIND_VERSION/$LIBUNWIND_SOURCE" && \
-  cd /tmp && curl -sqLO https://github.com/libunwind/libunwind/releases/download/v$LIBUNWIND_VERSION/$LIBUNWIND_SOURCE && \
-  tar xzf $LIBUNWIND_SOURCE && rm $LIBUNWIND_SOURCE && \
-  cd $LIBUNWIND_FOLDER && \
-  autoreconf -i && \
-  ./configure \
-    --enable-static \
-    --disable-shared \
-    --prefix=$TARGET_HOME && \
-  make -j$(nproc) && make install prefix=$TARGET_HOME && \
-  cd .. && rm -rf $LIBUNWIND_FOLDER
+copy ../llvm-$LLVM_VERSION.src.tar.xz /app
+
+#export LLVM_FOLDER=llvm-$LLVM_VERSION.src && \
+  #export LLVM_SOURCE=$LLVM_FOLDER.tar.xz && \
+  #echo "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/$LLVM_SOURCE" && \
+  #cd /tmp && curl -sqLO https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/$LLVM_SOURCE && \
+RUN LLVM_FOLDER=llvm-$LLVM_VERSION.src && \
+  LLVM_SOURCE=$LLVM_FOLDER.tar.xz && \
+  tar xf $LLVM_SOURCE && rm $LLVM_SOURCE && \
+  ls $LLVM_FOLDER/projects && \
+  cd $LLVM_FOLDER/libunwind && \
+  mkdir build && \
+  cd build && \
+  cmake \
+    -DCMAKE_BUILD_TYPE=release \
+    -DLIBUNWIND_ENABLE_SHARED=OFF \
+    -DLIBUNWIND_INSTALL_PREFIX=$TARGET_HOME \
+    -G Ninja \
+    .. && \
+  cmake --build . --target install && \
+  cd ../.. && rm -rf $LLVM_FOLDER
 
 # ---- Jemalloc
 

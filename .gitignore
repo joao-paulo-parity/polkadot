@@ -13,3 +13,4 @@ polkadot.*
 .cargo
 .env
 rust-rocksdb/
+llvm-12.0.1.src.tar.xz
