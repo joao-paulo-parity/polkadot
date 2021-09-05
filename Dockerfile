@@ -79,7 +79,12 @@ RUN export OPENSSL_FOLDER=openssl-$OPENSSL_VERSION && \
   cd /tmp && curl -sqO https://www.openssl.org/source/$OPENSSL_SOURCE && \
   tar xzf $OPENSSL_SOURCE && rm $OPENSSL_SOURCE && \
   cd $OPENSSL_FOLDER && \
-  CC="$CC $CFLAGS" ./Configure $OPENSSL_ARCH -fPIC --prefix=$TARGET_HOME no-shared no-async && \
+  CC="$CC $CFLAGS" ./Configure \
+    $OPENSSL_ARCH \
+    -fPIC \
+    no-shared \
+    no-async \
+    --prefix=$TARGET_HOME && \
   make -j$(nproc) && make install && \
   cd .. && rm -rf $OPENSSL_FOLDER
 
@@ -120,9 +125,17 @@ RUN export NCURSES_FOLDER=ncurses-$NCURSES_VERSION && \
   cd $NCURSES_FOLDER && \
   ./configure --build=$CBUILD --host=$CHOST \
     --enable-widec \
+    --without-develop \
+    --without-progs \
+    --without-tests \
+    --without-cxx \
+    --without-dlsym \
+    --without-ada \
+    --without-tests \
     --disable-rpath-hack \
     --without-cxx-binding \
-    --enable-static --disable-shared && \
+    --enable-static --disable-shared \
+    --prefix=$TARGET_HOME && \
   make -j$(nproc) && make install && \
   cd .. && rm -rf $NCURSES_FOLDER
 
@@ -145,3 +158,14 @@ copy . /app
 workdir /app
 
 run find / -name '*.a'
+
+run RUST_BACKTRACE=1 \
+  WASM_BUILD_NO_COLOR=1 \
+  RUSTC_WRAPPER= \
+  ROCKSDB_COMPILE=1 \
+  SNAPPY_COMPILE=1 \
+  LZ4_COMPILE=1 \
+  ZSTD_COMPILE=1 \
+  BZ2_COMPILE=1 \
+  LIBCLANG_STATIC_PATH= \
+  cargo build --target $TARGET --release --verbose
