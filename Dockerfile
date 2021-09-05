@@ -47,7 +47,7 @@ ENV TARGET_HOME=$MUSL/$TARGET
 ENV C_INCLUDE_PATH=$TARGET_HOME/include:$MUSL/lib/gcc/$TARGET/$GCC_VERSION/include
 
 ENV CC_EXE=$MUSL/bin/$TARGET-gcc \
-  LD=$CC_EXE \
+  LD=$CC \
   CXX_EXE=$MUSL/bin/$TARGET-g++ \
   CC=$MUSL/bin/gcc \
   CXX=$MUSL/bin/g++ \
@@ -63,7 +63,8 @@ RUN export CFLAGS="-v -nostartfiles -nostdinc -Bstatic -static -fPIC -Wl,-M -Wl,
   echo "#!/bin/sh\n$CXX_EXE $CFLAGS -nostdinc++ \"\$@\"" > $CXX && \
   chmod +x $CXX
 
-# ---- ZLib (necessary to build OpenSSL)
+# ---- ZLib
+# Necessary to build OpenSSL + also used on Polkadot builds
 
 ARG ZLIB_VERSION=1.2.11
 
