@@ -47,12 +47,15 @@ ENV TARGET_HOME=$MUSL/$TARGET
 ENV C_INCLUDE_PATH=$TARGET_HOME/include:$MUSL/lib/gcc/$TARGET/$GCC_VERSION/include
 
 ENV CC_EXE=$MUSL/bin/$TARGET-gcc \
-  LD=$CC \
   CXX_EXE=$MUSL/bin/$TARGET-g++ \
   CC=$MUSL/bin/gcc \
   CXX=$MUSL/bin/g++ \
   CPLUS_INCLUDE_PATH=$C_INCLUDE_PATH \
-  PATH=$MUSL_BIN:$PATH
+  PATH=$MUSL/bin:$PATH
+
+# use the compiler driver as a linker; linker-specific flags can be passed
+# through -Wl
+ENV LD=$CC
 
 # musl compiled with musl-cross-make already adds the relevant includes and
 # library paths by default; nostdinc + nostdinc++ should be used to ensure
@@ -162,18 +165,16 @@ RUN rustup target add $TARGET && \
 ENV PKG_CONFIG_ALL_STATIC=true \
   PKG_CONFIG_ALLOW_CROSS=true
 
-# Clang needs to be installed for the C++ headers to be available for build
-# tools during compilation, even though the binary itself is not actually used
-# https://github.com/rust-rocksdb/rust-rocksdb/issues/174#issuecomment-537326461
-RUN $APT_INSTALL pkg-config libclang-dev clang
-
-run echo "[target.$TARGET]\nlinker = \"$CC\"" > $CARGO_HOME/config
+run $APT_INSTALL pkg-config libclang-dev librocksdb-dev && \
+  cp -r /usr/include/rocksdb $TARGET_HOME/include
 
 copy . /app
 
 workdir /app
 
-run RUST_BACKTRACE=1 \
+run echo "[target.$TARGET]\nlinker = \"/app/ld_wrapper\"" > $CARGO_HOME/config
+
+run RUST_BACKTRACE=full \
   WASM_BUILD_NO_COLOR=1 \
   RUSTC_WRAPPER= \
   ROCKSDB_COMPILE=1 \

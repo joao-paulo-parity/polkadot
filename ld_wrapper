@@ -1,0 +1,19 @@
+#!/bin/bash
+
+for arg in "$@"; do
+  case "$arg" in
+    *.so.*)
+      shared_lib=true
+      break
+    ;;
+  esac
+done
+
+flags=()
+if [ ! "${shared_lib:-}" ]; then
+  flags+=("$TARGET_HOME/lib/crt1.o")
+fi
+
+echo "FLAGS! $CC $@"
+
+$CC $_CC_FLAGS "${flags[@]}" "$@"
