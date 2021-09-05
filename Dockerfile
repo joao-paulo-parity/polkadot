@@ -18,9 +18,11 @@ RUN apt update && \
 
 # ---- musl
 
-ARG CROSS_MAKE_VERSION=0.9.9 \
+ENV CROSS_MAKE_VERSION=0.9.9 \
   TARGET=x86_64-unknown-linux-musl \
   TARGET_HOME=/usr/local/musl/$TARGET
+
+RUN echo "$TARGET_HOME"
 
 RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   export CROSS_MAKE_SOURCE=$CROSS_MAKE_FOLDER.zip && \
@@ -38,7 +40,6 @@ ENV CC=$TARGET-gcc \
   CPLUS_INCLUDE_PATH=$TARGET_HOME/include \
   CFLAGS="-static -static-libstdc++ -static-libgcc -I$TARGET_HOME/include" \
   CXXFLAGS="-static -static-libstdc++ -static-libgcc -I$TARGET_HOME/include" \
-  CPPFLAGS="-static -static-libstdc++ -static-libgcc -I$TARGET_HOME/include" \
   LD=$TARGET-ld \
   LDFLAGS="-L$TARGET_HOME/lib" \
   LD_RUN_PATH=$TARGET_HOME/lib \
@@ -61,7 +62,6 @@ RUN export ZLIB_FOLDER=zlib-$ZLIB_VERSION && \
   cd $ZLIB_FOLDER && \
   ./configure \
     --static \
-    --archs="-fPIC" \
     --prefix=$TARGET_HOME && \
   make -j$(nproc) && make install && \
   cd .. && rm -rf $ZLIB_FOLDER
@@ -81,7 +81,7 @@ RUN export OPENSSL_FOLDER=openssl-$OPENSSL_VERSION && \
   cd $OPENSSL_FOLDER && \
   CC="$CC $CFLAGS" ./Configure \
     $OPENSSL_ARCH \
-    -fPIC \
+    -static \
     no-shared \
     no-async \
     --prefix=$TARGET_HOME && \
@@ -89,10 +89,10 @@ RUN export OPENSSL_FOLDER=openssl-$OPENSSL_VERSION && \
   cd .. && rm -rf $OPENSSL_FOLDER
 
 ENV OPENSSL_STATIC=1 \
-  OPENSSL_DIR=$TARGET_HOME/ \
-  OPENSSL_INCLUDE_DIR=$TARGET_HOME/include/ \
-  DEP_OPENSSL_INCLUDE=$TARGET_HOME/include/ \
-  OPENSSL_LIB_DIR=$TARGET_HOME/lib/
+  OPENSSL_DIR=$TARGET_HOME \
+  OPENSSL_INCLUDE_DIR=$TARGET_HOME/include \
+  DEP_OPENSSL_INCLUDE=$TARGET_HOME/include \
+  OPENSSL_LIB_DIR=$TARGET_HOME/lib
 
 # --- clang-sys dependencies (for bindgen of Subtrate dependencies)
 
@@ -130,7 +130,6 @@ RUN export NCURSES_FOLDER=ncurses-$NCURSES_VERSION && \
     --without-tests \
     --without-cxx \
     --without-dlsym \
-    --without-ada \
     --without-tests \
     --disable-rpath-hack \
     --without-cxx-binding \
@@ -141,17 +140,21 @@ RUN export NCURSES_FOLDER=ncurses-$NCURSES_VERSION && \
 
 # ---- Substrate
 
-RUN rustup toolchain install --profile minimal nightly && \
+RUN rustup target add $TARGET && \
+  rustup toolchain install --profile minimal nightly && \
   rustup target add wasm32-unknown-unknown --toolchain nightly
 
 ENV PKG_CONFIG_ALL_STATIC=true \
   PKG_CONFIG_ALLOW_CROSS=true
 
-RUN $APT_INSTALL pkg-config
+# Clang needs to be installed for the C++ headers to be available, even though
+# the binary itself is not actually used
+# https://github.com/rust-rocksdb/rust-rocksdb/issues/174#issuecomment-537326461
+RUN $APT_INSTALL pkg-config libclang-dev clang
 
 # use musl-gcc as the linker
 # https://github.com/rust-lang/rust/issues/47693#issuecomment-360021149
-run echo "[target.$TARGET]\nlinker = \"$CC\"\nrustflags = [\"-Clink-arg=-static\",\"-Clink-arg=-static-libstdc++\",\"\"-Clink-arg=-static-libgcc\",\"-Clink-arg=-Wl,-L,$TARGET_HOME/lib\",\"-Clink-arg=-Wl,-rpath,-L$TARGET_HOME/lib\"]" > $CARGO_HOME/config
+run echo "[target.$TARGET]\nlinker = \"$CC\"\nrustflags = [\"-Clink-arg=-static\",\"-Clink-arg=-static-libstdc++\",\"-Clink-arg=-static-libgcc\",\"-Clink-arg=-I,$TARGET_HOME/include\",\"-Clink-arg=-Wl,-L,$TARGET_HOME/lib\",\"-Clink-arg=-Wl,-rpath,$TARGET_HOME/lib\"]" > $CARGO_HOME/config
 
 copy . /app
 
