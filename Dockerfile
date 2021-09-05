@@ -158,48 +158,78 @@ RUN export NCURSES_FOLDER=ncurses-$NCURSES_VERSION && \
 
 # ---- Libunwind (for Jemalloc)
 
-RUN $APT_INSTALL ninja-build cmake
+#RUN $APT_INSTALL install build-essential ninja-build cmake python3-distutils
 
-ARG LLVM_VERSION=12.0.1
+#ARG LLVM_VERSION=12.0.1
 
-copy ../llvm-$LLVM_VERSION.src.tar.xz /app
+#copy ./llvm-$LLVM_VERSION.src.tar.xz /tmp
 
-#export LLVM_FOLDER=llvm-$LLVM_VERSION.src && \
-  #export LLVM_SOURCE=$LLVM_FOLDER.tar.xz && \
-  #echo "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/$LLVM_SOURCE" && \
-  #cd /tmp && curl -sqLO https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/$LLVM_SOURCE && \
-RUN LLVM_FOLDER=llvm-$LLVM_VERSION.src && \
-  LLVM_SOURCE=$LLVM_FOLDER.tar.xz && \
-  tar xf $LLVM_SOURCE && rm $LLVM_SOURCE && \
-  ls $LLVM_FOLDER/projects && \
-  cd $LLVM_FOLDER/libunwind && \
+##export LLVM_FOLDER=llvm-$LLVM_VERSION.src && \
+  ##export LLVM_SOURCE=$LLVM_FOLDER.tar.xz && \
+  ##echo "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/$LLVM_SOURCE" && \
+  ##cd /tmp && curl -sqLO https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/$LLVM_SOURCE && \
+#RUN LLVM_FOLDER=llvm-$LLVM_VERSION.src && \
+  #LLVM_SOURCE=$LLVM_FOLDER.tar.xz && \
+  #cd tmp && \
+  #tar xf $LLVM_SOURCE && rm $LLVM_SOURCE && \
+  #find $LLVM_FOLDER -name 'unwind' && \
+  #cd $LLVM_FOLDER/libunwind && \
+  #mkdir build && \
+  #cd build && \
+  #cmake \
+    #-DCMAKE_BUILD_TYPE=release \
+    #-DLIBUNWIND_ENABLE_SHARED=OFF \
+    #-DLIBUNWIND_INSTALL_PREFIX=$TARGET_HOME \
+    #-G Ninja \
+    #.. && \
+  #cmake --build . --target install && \
+  #cd ../.. && rm -rf $LLVM_FOLDER
+
+## ---- Jemalloc
+
+#ARG JEMALLOC_VERSION=5.2.1
+
+#RUN export JEMALLOC_FOLDER=jemalloc-$JEMALLOC_VERSION && \
+  #export JEMALLOC_SOURCE=$JEMALLOC_FOLDER.tar.bz2 && \
+  #cd /tmp && curl -sqLO https://github.com/jemalloc/jemalloc/releases/download/$JEMALLOC_VERSION/$JEMALLOC_SOURCE && \
+  #tar xzf $JEMALLOC_SOURCE && rm $JEMALLOC_SOURCE && \
+  #cd $JEMALLOC_FOLDER && \
+  #./configure \
+    #--with-static-libunwind=$TARGET_HOME/lunwind.a \
+    #--disable-libdl \
+    #--disable-initial-exec-tls \
+    #--prefix=$TARGET_HOME && \
+  #make -j$(nproc) && make install && \
+  #cd .. && rm -rf $JEMALLOC_FOLDER
+#ENV JEMALOC_OVERRIDE=
+
+# installing latest gflags, a rocksdb dependency
+
+## ---- RocksDB
+
+RUN cd /tmp && \
+  git clone https://github.com/gflags/gflags.git && \
+  cd $GFLAGS_FOLDER && \
   mkdir build && \
   cd build && \
   cmake \
-    -DCMAKE_BUILD_TYPE=release \
-    -DLIBUNWIND_ENABLE_SHARED=OFF \
-    -DLIBUNWIND_INSTALL_PREFIX=$TARGET_HOME \
-    -G Ninja \
+    -DBUILD_SHARED_LIBS=0 \
+    -DGFLAGS_INSTALL_STATIC_LIBS=1 \
     .. && \
-  cmake --build . --target install && \
-  cd ../.. && rm -rf $LLVM_FOLDER
+  make install && \
+  cd /tmp && rm -R /tmp/gflags
 
-# ---- Jemalloc
+ARG ROCKSDB_VERSION=v6.19.3
 
-ARG JEMALLOC_VERSION=5.2.1
+RUN cd /tmp && git clone https://github.com/facebook/rocksdb.git && \
+  cd rocksdb && \
+  git checkout v$ROCKSDB_VERSION && \
+  PORTABLE=1 make static_lib && \
+  cp librocksdb.a* $TARGET_HOME/lib && \
+  cd /tmp && rm -rf /tmp/rocksdb
 
-RUN export JEMALLOC_FOLDER=jemalloc-$JEMALLOC_VERSION && \
-  export JEMALLOC_SOURCE=$JEMALLOC_FOLDER.tar.bz2 && \
-  cd /tmp && curl -sqLO https://github.com/jemalloc/jemalloc/releases/download/$JEMALLOC_VERSION/$JEMALLOC_SOURCE && \
-  tar xzf $JEMALLOC_SOURCE && rm $JEMALLOC_SOURCE && \
-  cd $JEMALLOC_FOLDER && \
-  ./configure \
-    --with-static-libunwind=$TARGET_HOME/lunwind.a \
-    --disable-libdl \
-    --disable-initial-exec-tls \
-    --prefix=$TARGET_HOME && \
-  make -j$(nproc) && make install && \
-  cd .. && rm -rf $JEMALLOC_FOLDER
+RUN ROCKSDB_STATIC=1 \
+  ROCKSDB_LIB_DIR=$TARGET_HOME/lib
 
 # ---- Substrate
 
@@ -210,23 +240,29 @@ RUN rustup target add $TARGET && \
 ENV PKG_CONFIG_ALL_STATIC=true \
   PKG_CONFIG_ALLOW_CROSS=true
 
-run $APT_INSTALL pkg-config libclang-dev librocksdb-dev && \
-  cp -r /usr/include/rocksdb $TARGET_HOME/include
+run $APT_INSTALL pkg-config libclang-dev llvm
 
 copy . /app
 
 workdir /app
 
-run echo "#!/bin/bash\n$CC_EXE -v -nostartfiles -nostdinc -Bstatic -static -fPIC -Wl,-M -Wl,-L,$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib -Wl,--no-dynamic-linker -lstdc++ -lm -lc -lgcc \"$@\"" > /app/ld_wrapper && chmod +x /app/ld_wrapper && echo "[target.$TARGET]\nlinker = \"/app/ld_wrapper\"" > $CARGO_HOME/config
+# use the compiler driver as a linker; linker-specific flags can be passed
+# through -Wl
+ENV LD=$CC \
+  _CFLAGS="-v -nostartfiles -nostdinc -Bstatic -static -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-L,$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib -Wl,--no-dynamic-linker -lstdc++ -lm -lc -lgcc" \
+  STARTFILES="$TARGET_HOME/lib/crt1.o"
+
+RUN echo "[target.$TARGET]\nlinker = \"/app/ld_wrapper\"" > $CARGO_HOME/config &&
+  cat /app/ld_wrapper > $CC
 
 run RUST_BACKTRACE=full \
   WASM_BUILD_NO_COLOR=1 \
   RUSTC_WRAPPER= \
-  ROCKSDB_COMPILE=1 \
   SNAPPY_COMPILE=1 \
   LZ4_COMPILE=1 \
   ZSTD_COMPILE=1 \
   BZ2_COMPILE=1 \
-  cargo build --target $TARGET --release --verbose
+  cargo build --target $TARGET --release --verbose || \
+  cat /tmp/file
 
-run ldd /app/target/x86_64-unknown-linux-musl/release/polkadot
+#run ldd /app/target/x86_64-unknown-linux-musl/release/polkadot
