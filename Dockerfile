@@ -18,9 +18,13 @@ RUN apt update && \
 
 # ---- musl
 
-ENV CROSS_MAKE_VERSION=0.9.9 \
-  TARGET=x86_64-unknown-linux-musl \
-  TARGET_HOME=/usr/local/musl/$TARGET
+ENV TARGET=x86_64-unknown-linux-musl
+ENV TARGET_HOME=/usr/local/musl/$TARGET
+
+ARG MUSL_BIN=/usr/local/musl/bin
+ARG CROSS_MAKE_VERSION=0.9.9 \
+  CC_EXE=$MUSL_BIN/gcc \
+  CXX_EXE=$MUSL_BIN/g++
 
 RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   export CROSS_MAKE_SOURCE=$CROSS_MAKE_FOLDER.zip && \
@@ -30,20 +34,16 @@ RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   echo "OUTPUT=/usr/local/musl\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++" | tee config.mak && \
   make -j$(nproc) && make install && \
   ln -s /usr/local/musl/bin/$TARGET-strip /usr/local/musl/bin/musl-strip && \
-  ln -s /usr/local/musl/bin/$TARGET-gcc /usr/local/musl/bin/gcc && \
-  ln -s /usr/local/musl/bin/$TARGET-g++ /usr/local/musl/bin/g++ && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
 
-ENV CC=/usr/local/musl/bin/gcc \
-  CXX=/usr/local/musl/bin/g++ \
+ENV CC=$CC_EXE \
+  CXX=$CXX_EXE \
   C_INCLUDE_PATH=$TARGET_HOME/include \
   CPLUS_INCLUDE_PATH=$TARGET_HOME/include \
-  CFLAGS="-v -static -fPIC -fno-pie -no-pie -lgcc -lstdc++ -lm -lc -I$TARGET_HOME/include -Wl,-M -Wl,-L,$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib -Wl,--no-dynamic-linker" \
-  CXXFLAGS="-v -static -fPIC -fno-pie -no-pie -lgcc -lstdc++ -lm -lc -I$TARGET_HOME/include -Wl,-M -Wl,-L,$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib -Wl,--no-dynamic-linker" \
   LD=$TARGET-ld \
   LDFLAGS="-L$TARGET_HOME/lib" \
   LD_RUN_PATH=$TARGET_HOME/lib \
-  PATH=/usr/local/musl/bin:$PATH \
+  PATH=$MUSL_BIN:$PATH \
   # https://wiki.gentoo.org/wiki/Embedded_Handbook/General/Introduction#Environment_variables
   # CBUILD: Platform you are building on
   # CHOST and CTARGET: Platform the cross-built binaries will run on
@@ -51,11 +51,23 @@ ENV CC=/usr/local/musl/bin/gcc \
   CHOST=$TARGET \
   CTARGET=$TARGET
 
+#RUN mkdir /cosmopolitan &&
+  #wget https://justine.lol/cosmopolitan/cosmopolitan-amalgamation-1.0.zip && \
+  #unzip cosmopolitan-amalgamation-1.0.zip
+
+RUN export CFLAGS="-v -nostartfiles -nostdinc -Bstatic -static -fPIC -Wl,-M -Wl,-L,$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib -Wl,--no-dynamic-linker -lstdc++ -lm -lc -lgcc $TARGET_HOME/lib/crt1.o" && \
+  export MUSL_BIN_PREFIX="$MUSL_BIN/$TARGET" && \
+  echo "#!/bin/sh\n$MUSL_BIN_PREFIX-gcc $CFLAGS \"\$@\"\n" > $CC_EXE && \
+  chmod +x $CC_EXE && \
+  export CXXFLAGS="$CFLAGS -nostdinc++" && \
+  echo "#!/bin/sh\n$MUSL_BIN_PREFIX-g++ $CXXFLAGS \"\$@\"\n" > $CXX_EXE && \
+  chmod +x $CXX_EXE
+
 # ---- ZLib (necessary to build OpenSSL)
 
 ARG ZLIB_VERSION=1.2.11
 
-RUN export ZLIB_FOLDER=zlib-$ZLIB_VERSION && \
+RUN cat $CC_EXE && export ZLIB_FOLDER=zlib-$ZLIB_VERSION && \
   export ZLIB_SOURCE=$ZLIB_FOLDER.tar.gz && \
   cd /tmp && curl -sqLO https://zlib.net/$ZLIB_SOURCE && \
   tar xzf $ZLIB_SOURCE && rm $ZLIB_SOURCE && \
@@ -79,7 +91,7 @@ RUN export OPENSSL_FOLDER=openssl-$OPENSSL_VERSION && \
   cd /tmp && curl -sqO https://www.openssl.org/source/$OPENSSL_SOURCE && \
   tar xzf $OPENSSL_SOURCE && rm $OPENSSL_SOURCE && \
   cd $OPENSSL_FOLDER && \
-  CC="$CC $CFLAGS" ./Configure \
+  ./Configure \
     $OPENSSL_ARCH \
     -static \
     no-shared \
@@ -149,22 +161,12 @@ RUN rustup target add $TARGET && \
 ENV PKG_CONFIG_ALL_STATIC=true \
   PKG_CONFIG_ALLOW_CROSS=true
 
-# Clang needs to be installed for the C++ headers to be available, even though
-# the binary itself is not actually used
+# Clang needs to be installed for the C++ headers to be available for build
+# tools during compilation, even though the binary itself is not actually used
 # https://github.com/rust-rocksdb/rust-rocksdb/issues/174#issuecomment-537326461
-RUN $APT_INSTALL pkg-config libclang-dev clang file
+RUN $APT_INSTALL pkg-config libclang-dev clang
 
-ENV WRAPPED_CC=/usr/bin/__cc__ \
-  WRAPPED_CXX=/usr/bin/__cxx__
-
-run echo "#!/bin/bash\n$CC $CFLAGS \"$@\"" > $WRAPPED_CC && \
-  chmod +x $WRAPPED_CC && \
-  echo "[target.$TARGET]\nlinker = \"$WRAPPED_CC\"" > $CARGO_HOME/config && \
-  echo "#!/bin/bash\n$CXX $CXXFLAGS \"$@\"" > $WRAPPED_CXX && \
-  chmod +x $WRAPPED_CXX
-
-# use musl-gcc as the linker: https://github.com/rust-lang/rust/issues/47693#issuecomment-360021149
-#run echo "[target.$TARGET]\nlinker = \"$CC\"\nrustflags = [\"-Clink-arg=-static\",\"-Clink-arg=-v\",\"-Wl,-M\",\"-Clink-arg=-lgcc\",\"-Clink-arg=-lstdc++\",\"-Clink-arg=-lm\",\"-Clink-arg=-lc\",\"-Clink-arg=-lgcc_s\",\"-Clink-arg=-I$TARGET_HOME/include\",\"-Clink-arg=-Wl,-L,$TARGET_HOME/lib\",\"-Clink-arg=-Wl,-rpath,$TARGET_HOME/lib\"]" > $CARGO_HOME/config
+run echo "[target.$TARGET]\nlinker = \"$CC\"" > $CARGO_HOME/config
 
 copy . /app
 
@@ -180,8 +182,8 @@ run RUST_BACKTRACE=1 \
   LZ4_COMPILE=1 \
   ZSTD_COMPILE=1 \
   BZ2_COMPILE=1 \
-  CC="$WRAPPED_CC" \
-  CXX="$WRAPPED_CXX" \
+  CFLAGS= \
+  CXXFLAGS= \
   cargo build --target $TARGET --release --verbose
 
 run ldd /app/target/x86_64-unknown-linux-musl/release/polkadot
