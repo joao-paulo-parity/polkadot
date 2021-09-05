@@ -2,9 +2,18 @@ FROM rust:1.54.0-slim-buster
 
 # TODO: checksum verification for all downloaded packages
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 ARG APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends"
 
-ENV DEBIAN_FRONTEND=noninteractive
+ARG TARGET=x86_64-unknown-linux-musl
+
+# https://wiki.gentoo.org/wiki/Embedded_Handbook/General/Introduction#Environment_variables
+# CBUILD: Platform you are building on
+# CHOST and CTARGET: Platform the cross-built binaries will run on
+ARG CBUILD=x86_64-pc-linux-gnu
+ARG CHOST=$CBUILD \
+  CTARGET=$CBUILD
 
 # --- Setup for building dependencies
 
@@ -18,13 +27,7 @@ RUN apt update && \
 
 # ---- musl
 
-ENV TARGET=x86_64-unknown-linux-musl
-ENV TARGET_HOME=/usr/local/musl/$TARGET
-
-ARG MUSL_BIN=/usr/local/musl/bin
-ARG CROSS_MAKE_VERSION=0.9.9 \
-  CC_EXE=$MUSL_BIN/gcc \
-  CXX_EXE=$MUSL_BIN/g++
+ARG CROSS_MAKE_VERSION=0.9.9
 
 RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   export CROSS_MAKE_SOURCE=$CROSS_MAKE_FOLDER.zip && \
@@ -36,38 +39,35 @@ RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   ln -s /usr/local/musl/bin/$TARGET-strip /usr/local/musl/bin/musl-strip && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
 
-ENV CC=$CC_EXE \
-  CXX=$CXX_EXE \
-  C_INCLUDE_PATH=$TARGET_HOME/include \
-  CPLUS_INCLUDE_PATH=$TARGET_HOME/include \
-  LD=$TARGET-ld \
-  LDFLAGS="-L$TARGET_HOME/lib" \
-  LD_RUN_PATH=$TARGET_HOME/lib \
-  PATH=$MUSL_BIN:$PATH \
-  # https://wiki.gentoo.org/wiki/Embedded_Handbook/General/Introduction#Environment_variables
-  # CBUILD: Platform you are building on
-  # CHOST and CTARGET: Platform the cross-built binaries will run on
-  CBUILD=x86_64-pc-linux-gnu \
-  CHOST=$TARGET \
-  CTARGET=$TARGET
+ENV MUSL=/usr/local/musl \
+  GCC_VERSION=9.2.0
 
-#RUN mkdir /cosmopolitan &&
-  #wget https://justine.lol/cosmopolitan/cosmopolitan-amalgamation-1.0.zip && \
-  #unzip cosmopolitan-amalgamation-1.0.zip
+ENV TARGET_HOME=$MUSL/$TARGET
 
+ENV C_INCLUDE_PATH=$TARGET_HOME/include:$MUSL/lib/gcc/$TARGET/$GCC_VERSION/include
+
+ENV CC_EXE=$MUSL/bin/$TARGET-gcc \
+  LD=$CC_EXE \
+  CXX_EXE=$MUSL/bin/$TARGET-g++ \
+  CC=$MUSL/bin/gcc \
+  CXX=$MUSL/bin/g++ \
+  CPLUS_INCLUDE_PATH=$C_INCLUDE_PATH \
+  PATH=$MUSL_BIN:$PATH
+
+# musl compiled with musl-cross-make already adds the relevant includes and
+# library paths by default; nostdinc + nostdinc++ should be used to ensure
+# _other_ paths are not looked at, though
 RUN export CFLAGS="-v -nostartfiles -nostdinc -Bstatic -static -fPIC -Wl,-M -Wl,-L,$TARGET_HOME/lib -Wl,-rpath,$TARGET_HOME/lib -Wl,--no-dynamic-linker -lstdc++ -lm -lc -lgcc $TARGET_HOME/lib/crt1.o" && \
-  export MUSL_BIN_PREFIX="$MUSL_BIN/$TARGET" && \
-  echo "#!/bin/sh\n$MUSL_BIN_PREFIX-gcc $CFLAGS \"\$@\"\n" > $CC_EXE && \
-  chmod +x $CC_EXE && \
-  export CXXFLAGS="$CFLAGS -nostdinc++" && \
-  echo "#!/bin/sh\n$MUSL_BIN_PREFIX-g++ $CXXFLAGS \"\$@\"\n" > $CXX_EXE && \
-  chmod +x $CXX_EXE
+  echo "#!/bin/sh\n$CC_EXE $CFLAGS \"\$@\"" > $CC && \
+  chmod +x $CC && \
+  echo "#!/bin/sh\n$CXX_EXE $CFLAGS -nostdinc++ \"\$@\"" > $CXX && \
+  chmod +x $CXX
 
 # ---- ZLib (necessary to build OpenSSL)
 
 ARG ZLIB_VERSION=1.2.11
 
-RUN cat $CC_EXE && export ZLIB_FOLDER=zlib-$ZLIB_VERSION && \
+RUN export ZLIB_FOLDER=zlib-$ZLIB_VERSION && \
   export ZLIB_SOURCE=$ZLIB_FOLDER.tar.gz && \
   cd /tmp && curl -sqLO https://zlib.net/$ZLIB_SOURCE && \
   tar xzf $ZLIB_SOURCE && rm $ZLIB_SOURCE && \
@@ -172,8 +172,6 @@ copy . /app
 
 workdir /app
 
-run find / -name '*.a'
-
 run RUST_BACKTRACE=1 \
   WASM_BUILD_NO_COLOR=1 \
   RUSTC_WRAPPER= \
@@ -182,10 +180,6 @@ run RUST_BACKTRACE=1 \
   LZ4_COMPILE=1 \
   ZSTD_COMPILE=1 \
   BZ2_COMPILE=1 \
-  CFLAGS= \
-  CXXFLAGS= \
   cargo build --target $TARGET --release --verbose
 
 run ldd /app/target/x86_64-unknown-linux-musl/release/polkadot
-
-#run rm -rf *
