@@ -49,7 +49,7 @@ RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   cd /tmp && curl -Lsq https://github.com/richfelker/musl-cross-make/archive/v$CROSS_MAKE_VERSION.zip -o $CROSS_MAKE_SOURCE && \
   unzip -q $CROSS_MAKE_SOURCE && rm $CROSS_MAKE_SOURCE && \
   cd $CROSS_MAKE_FOLDER && \
-  echo "OUTPUT=/usr/local/musl\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++\nGCC_VER=$GCC_VERSION" | tee config.mak && \
+  echo "OUTPUT=/usr/local/musl\nTARGET = $TARGET\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++\nGCC_VER=$GCC_VERSION" | tee config.mak && \
   make -j$(nproc) && make install && \
   ln -s /usr/local/musl/bin/$TARGET-strip /usr/local/musl/bin/musl-strip && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
@@ -60,8 +60,6 @@ ENV TARGET_HOME=$MUSL/$TARGET
 # ---- Compiler setup
 
 RUN $APT_INSTALL git libstdc++-$GCC_MAJOR_VERSION-dev
-
-run find / -name 'libstdc++*' -delete
 
 ENV C_INCLUDE_PATH=$TARGET_HOME/include:$MUSL/lib/gcc/$TARGET/$GCC_VERSION/include
 
@@ -83,19 +81,13 @@ ENV LD=$CC
 
 # rpath-link is used to prioritize the libraries' location at link time
 
-# `-nostartfiles` gets rid of glib's initialization files in favor of our own.
-
-# crt1.o is the core C runtime provided by musl and we use it instead of the
-# system's native one. we provide it so that libraries depending on this
-# functionality do not need to pull it from libc.
-
 # -fPIC enables Position Independent Code which is a requirement for producing
 # static binaries. Since *ALL* objects should be compiled with this flag, we'll
 # hijack the compilar binaries here with a custom script which unconditionally
 # embeds those flags regardless of what each individual application wants, as
 # opposed to e.g. relying on CFLAGS which might be ignored by the applications'
 # build scripts.
-ENV BASE_CFLAGS="-v -static -nostdinc -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker"
+ENV BASE_CFLAGS="-v -static --static -nostdinc -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker"
 ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET -nostdinc++"
 
 copy ./generate_wrapper /generate_wrapper
@@ -167,7 +159,7 @@ RUN export LIBFFI_FOLDER=libffi-$LIBFFI_VERSION && \
   sed -e '/^includesdir/ s/$(libdir).*$/$(includedir)/' -i include/Makefile.in && \
   sed -e '/^includedir/ s/=.*$/=@includedir@/' -e 's/^Cflags: -I${includedir}/Cflags:/' -i libffi.pc.in && \
   ./configure \
-    --build=$HOST --host=$HOST --target=$HOST \
+    --build=$HOST --host=$TARGET --target=$TARGET \
     --enable-static \
     --disable-shared \
     --prefix=$TARGET_HOME && \
@@ -181,7 +173,7 @@ RUN export NCURSES_FOLDER=ncurses-$NCURSES_VERSION && \
   cd /tmp && curl -sqLO https://invisible-mirror.net/archives/ncurses/current/$NCURSES_SOURCE && \
   tar xzf $NCURSES_SOURCE && rm $NCURSES_SOURCE && \
   cd $NCURSES_FOLDER && \
-  ./configure --build=$HOST --host=$HOST \
+  ./configure --build=$TARGET --host=$TARGET \
     --enable-widec \
     --without-ada \
     --without-develop \
