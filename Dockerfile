@@ -8,11 +8,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 ARG APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends"
 
-ARG TARGET=x86_64-unknown-linux-musl
-
 # https://wiki.gentoo.org/wiki/Embedded_Handbook/General/Introduction#Environment_variables
-# HOST: Platform you are building on
-# CHOST and CTARGET: Platform the cross-built binaries will run on
+ARG TARGET=x86_64-unknown-linux-musl
 ARG HOST=x86_64-pc-linux-gnu
 
 
@@ -211,7 +208,7 @@ RUN export LIBUNWIND_FOLDER=libunwind-$LIBUNWIND_VERSION && \
   autoreconf -i && \
   ./configure \
     --build="$HOST" \
-    --host="$HOST" \
+    --host="$TARGET" \
     --enable-static \
     --disable-shared \
     --prefix=$TARGET_HOME && \
@@ -227,7 +224,7 @@ RUN export JEMALLOC_FOLDER=jemalloc-$JEMALLOC_VERSION && \
   cd $JEMALLOC_FOLDER && \
   ./configure \
     --build="$HOST" \
-    --host="$HOST" \
+    --host="$TARGET" \
     --with-static-libunwind=$TARGET_HOME/lib/libunwind.a \
     --disable-libdl \
     --disable-initial-exec-tls \
