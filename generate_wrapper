@@ -1,0 +1,28 @@
+#!/bin/bash
+
+echo "#!/bin/bash
+
+set -eu
+
+args=()
+
+for arg in \"\$@\"; do
+  case \"\$arg\" in
+    -Bdynamic|-dynamic|-static-pie|-pie|-shared*|-symbolic) continue ;;
+    *.so|*.so.*) echo \"Arguments: $@\"; exit 1;;
+  esac
+
+  # replace built-in rust target's runtime files with musl's
+  if [[ \"\$arg\" =~ ^/.+/([^.]*.o)\$ ]]; then
+    obj=\"\$TARGET_HOME/lib/\${BASH_REMATCH[1]}\"
+    if [[ -e \"\$obj\" ]]; then
+      args+=(\"\$obj\")
+      continue
+    fi
+  fi
+
+  args+=(\"\$arg\")
+done
+
+$1 \"\${args[@]}\"
+"
