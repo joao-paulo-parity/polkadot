@@ -11,11 +11,9 @@ ARG APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends"
 ARG TARGET=x86_64-unknown-linux-musl
 
 # https://wiki.gentoo.org/wiki/Embedded_Handbook/General/Introduction#Environment_variables
-# CBUILD: Platform you are building on
+# HOST: Platform you are building on
 # CHOST and CTARGET: Platform the cross-built binaries will run on
-ARG CBUILD=x86_64-unknown-linux-gnu
-ARG CHOST=$TARGET \
-  CTARGET=$TARGET
+ARG HOST=x86_64-pc-linux-gnu
 
 
 # ---- Rust toolchains for Substrate
@@ -59,8 +57,11 @@ RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
 ENV MUSL=/usr/local/musl
 ENV TARGET_HOME=$MUSL/$TARGET
 
-
 # ---- Compiler setup
+
+RUN $APT_INSTALL git libstdc++-$GCC_MAJOR_VERSION-dev
+
+run find / -name 'libstdc++*' -delete
 
 ENV C_INCLUDE_PATH=$TARGET_HOME/include:$MUSL/lib/gcc/$TARGET/$GCC_VERSION/include
 
@@ -94,14 +95,14 @@ ENV LD=$CC
 # embeds those flags regardless of what each individual application wants, as
 # opposed to e.g. relying on CFLAGS which might be ignored by the applications'
 # build scripts.
-ENV BASE_CFLAGS="-v -Bstatic -static -static-libgcc -fPIC -Wl,-M -Wl,-L,$TARGET_HOME/lib -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker"
-ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET -static-libstdc++"
+ENV BASE_CFLAGS="-v -static -nostdinc -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker"
+ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET -nostdinc++"
 
 copy ./generate_wrapper /generate_wrapper
 
-RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS $TARGET_HOME/lib/crt1.o" > $CC && \
+RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS" > $CC && \
   chmod +x $CC && \
-  /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS $TARGET_HOME/lib/crt1.o" > $CXX && \
+  /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS" > $CXX && \
   chmod +x $CXX
 
 # ---- ZLib
@@ -166,7 +167,7 @@ RUN export LIBFFI_FOLDER=libffi-$LIBFFI_VERSION && \
   sed -e '/^includesdir/ s/$(libdir).*$/$(includedir)/' -i include/Makefile.in && \
   sed -e '/^includedir/ s/=.*$/=@includedir@/' -e 's/^Cflags: -I${includedir}/Cflags:/' -i libffi.pc.in && \
   ./configure \
-    --build=$CBUILD --host=$CHOST --target=$CTARGET \
+    --build=$HOST --host=$HOST --target=$HOST \
     --enable-static \
     --disable-shared \
     --prefix=$TARGET_HOME && \
@@ -180,7 +181,7 @@ RUN export NCURSES_FOLDER=ncurses-$NCURSES_VERSION && \
   cd /tmp && curl -sqLO https://invisible-mirror.net/archives/ncurses/current/$NCURSES_SOURCE && \
   tar xzf $NCURSES_SOURCE && rm $NCURSES_SOURCE && \
   cd $NCURSES_FOLDER && \
-  ./configure --build=$CBUILD --host=$CHOST \
+  ./configure --build=$HOST --host=$HOST \
     --enable-widec \
     --without-ada \
     --without-develop \
@@ -217,8 +218,8 @@ RUN export LIBUNWIND_FOLDER=libunwind-$LIBUNWIND_VERSION && \
   sed -e 's/-lgcc_s/-lgcc/' -i configure.ac && \
   autoreconf -i && \
   ./configure \
-    --build="$CBUILD" \
-    --host="$CHOST" \
+    --build="$HOST" \
+    --host="$HOST" \
     --enable-static \
     --disable-shared \
     --prefix=$TARGET_HOME && \
@@ -233,6 +234,8 @@ RUN export JEMALLOC_FOLDER=jemalloc-$JEMALLOC_VERSION && \
   tar xf $JEMALLOC_SOURCE && rm $JEMALLOC_SOURCE && \
   cd $JEMALLOC_FOLDER && \
   ./configure \
+    --build="$HOST" \
+    --host="$HOST" \
     --with-static-libunwind=$TARGET_HOME/lib/libunwind.a \
     --disable-libdl \
     --disable-initial-exec-tls \
@@ -246,8 +249,6 @@ ENV JEMALLOC_OVERRIDE=$TARGET_HOME/lib/libjemalloc.a
 
 # ---- RocksDB
 # Used for the database of Substrate-based chains
-
-RUN $APT_INSTALL git libstdc++-$GCC_MAJOR_VERSION-dev
 
 RUN cd /tmp && \
   git clone https://github.com/gflags/gflags.git && \
@@ -320,7 +321,6 @@ run bash -c "RUST_BACKTRACE=full \
   ZSTD_COMPILE=1 \
   BZ2_COMPILE=1 \
   BUILD_ROCKSDB=1 \
-  RUSTFLAGS="-Ctarget-feature=+crt-static" \
   ROCKSDB_DISABLE_JEMALLOC=1 \
   ROCKSDB_DISABLE_TCMALLOC=1 \
   cargo build --target $TARGET --release --verbose 2>&1 | tee /tmp/log.txt"; \

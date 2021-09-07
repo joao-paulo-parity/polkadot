@@ -9,6 +9,7 @@ args=()
 for arg in \"\$@\"; do
   case \"\$arg\" in
     -Bdynamic|-dynamic|-static-pie|-pie|-shared*|-symbolic) continue ;;
+    -lstdc++) echo \"LSTDC++ \$@\" > /tmp/log2.txt; exit 1;;
     *.so|*.so.*) echo \"Arguments: $@\"; exit 1;;
   esac
 
