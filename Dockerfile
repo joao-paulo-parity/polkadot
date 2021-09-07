@@ -40,19 +40,18 @@ RUN apt update && \
 ARG GCC_MAJOR_VERSION=9
 ARG GCC_VERSION=$GCC_MAJOR_VERSION.2.0
 ARG CROSS_MAKE_VERSION=0.9.9
+ENV MUSL=/usr/local/musl
+ENV TARGET_HOME=$MUSL/$TARGET
 
 RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   export CROSS_MAKE_SOURCE=$CROSS_MAKE_FOLDER.zip && \
   cd /tmp && curl -Lsq https://github.com/richfelker/musl-cross-make/archive/v$CROSS_MAKE_VERSION.zip -o $CROSS_MAKE_SOURCE && \
   unzip -q $CROSS_MAKE_SOURCE && rm $CROSS_MAKE_SOURCE && \
   cd $CROSS_MAKE_FOLDER && \
-  echo "OUTPUT=/usr/local/musl\nTARGET = $TARGET\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++\nGCC_VER=$GCC_VERSION" | tee config.mak && \
+  echo "OUTPUT=$MUSL\nTARGET = $TARGET\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++\nGCC_VER=$GCC_VERSION" | tee config.mak && \
   make -j$(nproc) && make install && \
   ln -s /usr/local/musl/bin/$TARGET-strip /usr/local/musl/bin/musl-strip && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
-
-ENV MUSL=/usr/local/musl
-ENV TARGET_HOME=$MUSL/$TARGET
 
 # ---- Compiler setup
 
@@ -275,7 +274,9 @@ RUN export ROCKSDB_FOLDER=rocksdb-$ROCKSDB_VERSION && \
 
 ENV ROCKSDB_STATIC=1 \
   ROCKSDB_LIB_DIR=$TARGET_HOME/lib \
-  ROCKSDB_INCLUDE_DIR=$TARGET_HOME/include
+  ROCKSDB_INCLUDE_DIR=$TARGET_HOME/include \
+  ROCKSDB_DISABLE_JEMALLOC=1 \
+  ROCKSDB_DISABLE_TCMALLOC=1
 
 
 # ---- Substrate
@@ -309,9 +310,6 @@ run bash -c "RUST_BACKTRACE=full \
   LZ4_COMPILE=1 \
   ZSTD_COMPILE=1 \
   BZ2_COMPILE=1 \
-  BUILD_ROCKSDB=1 \
-  ROCKSDB_DISABLE_JEMALLOC=1 \
-  ROCKSDB_DISABLE_TCMALLOC=1 \
   cargo build --target $TARGET --release --verbose 2>&1 | tee /tmp/log.txt"; \
   if [ -e /app/target/x86_64-unknown-linux-musl/release/polkadot ]; then \
     mv /app/target/x86_64-unknown-linux-musl/release/polkadot /tmp; \
