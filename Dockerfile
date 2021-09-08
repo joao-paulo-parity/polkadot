@@ -16,7 +16,7 @@ ARG HOST=x86_64-linux-gnu
 
 # ---- Rust toolchains for Substrate
 
-RUN rustup target add $TARGET && \
+RUN rustup target add $RUST_TARGET && \
   rustup toolchain install --profile minimal nightly && \
   rustup target add wasm32-unknown-unknown --toolchain nightly
 
@@ -294,7 +294,7 @@ ENV ROCKSDB_STATIC=1 \
 # compiler options by librocksdb-sys, apparently
 RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS -lrocksdb" > $CC && \
   /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS -lrocksdb" > $CXX && \
-  echo "[target.$TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\"]" > $CARGO_HOME/config
+  echo "[target.$RUST_TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\"]" > $CARGO_HOME/config
 
 # For compile-time-only build tools, preserve this host's original compilers
 # since they are not included in the binary we'll compile

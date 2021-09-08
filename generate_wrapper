@@ -8,7 +8,7 @@ args=()
 
 for arg in \"\$@\"; do
   case \"\$arg\" in
-    -Bdynamic|-dynamic|-shared*|-symbolic|-nodefaultlibs|-lstdc++) continue ;;
+    -Bdynamic|-dynamic|-shared*|-symbolic|-nodefaultlibs|-nostartfiles|-lstdc++) continue ;;
     *.so|*.so.*) echo \"Arguments: $@\" > /tmp/log2.txt; exit 1;;
   esac
 
