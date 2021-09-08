@@ -323,8 +323,6 @@ env CC_x86_64_unknown_linux_gnu=/usr/bin/gcc \
   LDFLAGS_x86_64_unknown_linux_gnu="-M" \
   AR_x86_64_unknown_linux_gnu=/usr/bin/ar
 
-# -lrocksdb has to be added manually because the library is not added in the
-# compiler options by librocksdb-sys, apparently
 RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS" > $CC && \
   /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS" > $CXX && \
   echo "[target.$RUST_TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\",\"-C\",\"prefer-dynamic=no\",\"-C\",\"relocation-model=pic\"]" > $CARGO_HOME/config
