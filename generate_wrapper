@@ -6,11 +6,12 @@ set -eu
 
 args=()
 
+objs=()
 for arg in \"\$@\"; do
   case \"\$arg\" in
     -Bdynamic|-dynamic|-static-pie|-pie|-shared*|-symbolic) continue ;;
-    -lstdc++) echo \"LSTDC++ \$@\" > /tmp/log2.txt; exit 1;;
-    *.so|*.so.*) echo \"Arguments: $@\"; exit 1;;
+    *.so|*.so.*) echo \"Arguments: $@\" > /tmp/log2.txt; exit 1;;
+    *.o|*.s) objs+=(\"$arg\");;
   esac
 
   # replace built-in rust target's runtime files with musl's
