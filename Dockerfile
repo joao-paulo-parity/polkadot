@@ -56,12 +56,11 @@ RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   cd $CROSS_MAKE_FOLDER && \
   echo "OUTPUT = $MUSL\nTARGET = $TARGET\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++\nGCC_CONFIG += --enable-default-pie\nGCC_CONFIG += --enable-initfini-array\nGCC_VER=$GCC_VERSION" | tee config.mak && \
   make -j$(nproc) && make install && \
+  ln -s $MUSL/bin/$TARGET-ar $MUSL/bin/ar && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
 
 
 # ---- Compiler setup
-
-RUN find $MUSL/lib -name '*.so*' -delete
 
 RUN $APT_INSTALL git libstdc++-$GCC_MAJOR_VERSION-dev
 
@@ -89,13 +88,14 @@ ENV LD=$CC
 # embeds those flags regardless of what each individual application wants, as
 # opposed to e.g. relying on CFLAGS which might be ignored by the applications'
 # build scripts.
-ENV BASE_CFLAGS="-v -static --static -nostdinc -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -L$TARGET_HOME/lib"
-ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET -nostdinc++"
+ENV BASE_CFLAGS="-v -static --static -nostdinc -nostdinc++ -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -L$TARGET_HOME/lib"
+ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET"
 
 copy ./generate_wrapper /generate_wrapper
 
 RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS" > $CC && \
   chmod +x $CC && \
+  cp $CC $LD && \
   /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS" > $CXX && \
   chmod +x $CXX
 
@@ -162,7 +162,9 @@ RUN export LIBFFI_FOLDER=libffi-$LIBFFI_VERSION && \
   sed -e '/^includesdir/ s/$(libdir).*$/$(includedir)/' -i include/Makefile.in && \
   sed -e '/^includedir/ s/=.*$/=@includedir@/' -e 's/^Cflags: -I${includedir}/Cflags:/' -i libffi.pc.in && \
   ./configure \
-    --build=$HOST --host=$TARGET --target=$TARGET \
+    --build=$HOST \
+    --host=$TARGET \
+    --target=$TARGET \
     --enable-static \
     --disable-shared \
     --prefix=$TARGET_HOME && \
@@ -176,7 +178,9 @@ RUN export NCURSES_FOLDER=ncurses-$NCURSES_VERSION && \
   cd /tmp && curl -sqLO https://invisible-mirror.net/archives/ncurses/current/$NCURSES_SOURCE && \
   tar xzf $NCURSES_SOURCE && rm $NCURSES_SOURCE && \
   cd $NCURSES_FOLDER && \
-  ./configure --build=$TARGET --host=$TARGET \
+  ./configure
+    --build=$HOST \
+    --host=$TARGET \
     --enable-widec \
     --without-ada \
     --without-develop \
@@ -213,8 +217,8 @@ RUN export LIBUNWIND_FOLDER=libunwind-$LIBUNWIND_VERSION && \
   sed -e 's/-lgcc_s/-lgcc/' -i configure.ac && \
   autoreconf -i && \
   ./configure \
-    --build="$HOST" \
-    --host="$TARGET" \
+    --build=$HOST \
+    --host=$TARGET \
     --enable-static \
     --disable-shared \
     --prefix=$TARGET_HOME && \
@@ -229,8 +233,8 @@ RUN export JEMALLOC_FOLDER=jemalloc-$JEMALLOC_VERSION && \
   tar xf $JEMALLOC_SOURCE && rm $JEMALLOC_SOURCE && \
   cd $JEMALLOC_FOLDER && \
   ./configure \
-    --build="$HOST" \
-    --host="$TARGET" \
+    --build=$HOST \
+    --host=$TARGET \
     --with-static-libunwind=$TARGET_HOME/lib/libunwind.a \
     --disable-libdl \
     --disable-initial-exec-tls \
@@ -321,9 +325,9 @@ env CC_x86_64_unknown_linux_gnu=/usr/bin/gcc \
 
 # -lrocksdb has to be added manually because the library is not added in the
 # compiler options by librocksdb-sys, apparently
-RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS -lrocksdb -lstdc++" > $CC && \
-  /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS -lrocksdb -lstdc++" > $CXX && \
-  echo "[target.$RUST_TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\"]" > $CARGO_HOME/config
+RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS" > $CC && \
+  /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS" > $CXX && \
+  echo "[target.$RUST_TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\",\"-C\",\"prefer-dynamic=no\",\"-C\",\"relocation-model=pic\"]" > $CARGO_HOME/config
 
 copy . /app
 

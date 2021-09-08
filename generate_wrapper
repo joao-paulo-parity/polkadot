@@ -4,7 +4,7 @@ echo "#!/bin/bash
 
 set -eu
 
-echo \"BEFORE \${args[@]}\" >> /tmp/args.txt
+echo \"BEFORE \$@\" >> /tmp/args.txt
 
 args=()
 
