@@ -58,6 +58,7 @@ RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   make -j$(nproc) && make install && \
   ln -s $MUSL/bin/$TARGET-ar $MUSL/bin/ar && \
   ln -s $MUSL/bin/$TARGET-as $MUSL/bin/as && \
+  ln -s $MUSL/bin/$TARGET-ld $MUSL/bin/ld && \
   ln -s $MUSL/bin/$TARGET-strip $MUSL/bin/strip && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
 
@@ -73,7 +74,6 @@ ENV CC_EXE=$MUSL/bin/$TARGET-gcc \
   CXX_EXE=$MUSL/bin/$TARGET-g++ \
   CC=$MUSL/bin/gcc \
   CXX=$MUSL/bin/g++ \
-  LD=$MUSL/bin/ld \
   CPLUS_INCLUDE_PATH=$C_INCLUDE_PATH \
   PATH=$MUSL/bin:$PATH
 
@@ -97,11 +97,11 @@ copy ./generate_wrapper /generate_wrapper
 RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS" > $CC && \
   chmod +x $CC && \
   cp $CC $MUSL/bin/cc && \
+  cp $CC $MUSL/bin/gnu-gcc && \
   /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS" > $CXX && \
   chmod +x $CXX && \
   cp $CXX $MUSL/bin/c++ && \
-  /generate_wrapper "$LD_EXE $BASE_LDFLAGS" > $LD && \
-  chmod +x $LD
+  cp $CXX $MUSL/bin/gnu-g++
 
 
 # ---- ZLib
