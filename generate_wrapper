@@ -9,7 +9,7 @@ args=()
 for arg in \"\$@\"; do
   case \"\$arg\" in
     -Bdynamic|-dynamic|-shared*|-symbolic|-nodefaultlibs|-nostartfiles|-lstdc++) continue ;;
-    *.so|*.so.*) echo \"Arguments: $@\" > /tmp/log2.txt; exit 1;;
+    *.so|*.so.*) echo \"Detected dynamic object: \$@\" > /tmp/log2.txt; exit 1;;
   esac
 
   # replace built-in rust target's runtime files with musl's
