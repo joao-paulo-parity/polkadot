@@ -42,19 +42,20 @@ ENV PKG_CONFIG_ALL_STATIC=true \
 # Default to the same GCC version as the one used by default in musl-cross-make 
 # https://github.com/richfelker/musl-cross-make/blob/75e6c618adc9dde2cdcd0522ef40adf75a6bffe7/Makefile#L6
 ARG GCC_MAJOR_VERSION=9 \
-  GCC_VERSION=$GCC_MAJOR_VERSION.2.0 \
+  GCC_MINOR_VERSION=2.0 \
   CROSS_MAKE_VERSION=0.9.9 \
   MUSL=/usr/local/musl
 
-ENV HIJACK_AR=$MUSL/bin/ar \
+ENV GCC_VERSION=$GCC_MAJOR_VERSION.$GCC_MINOR_VERSION \
+  TARGET_HOME=$MUSL/$TARGET \
+  HIJACK_AR=$MUSL/bin/ar \
   HIJACK_AS=$MUSL/bin/as \
   HIJACK_LD=$MUSL/bin/ld \
   HIJACK_STRIP=$MUSL/bin/strip \
   HIJACK_CC=$MUSL/bin/cc \
   HIJACK_CPP=$MUSL/bin/c++ \
   HIJACK_GNUCC=$MUSL/bin/gnu-cc \
-  HIJACK_GNUCXX=$MUSL/bin/gnu-cxx \
-  TARGET_HOME=$MUSL/$TARGET
+  HIJACK_GNUCXX=$MUSL/bin/gnu-cxx
 
 # --enable-default-pie: https://www.openwall.com/lists/musl/2017/12/21/1
 #   If you build gcc with --enable-default-pie, musl libc.a will also end up as PIC by default.
@@ -94,9 +95,9 @@ ENV CC_EXE=$MUSL/bin/$TARGET-gcc \
 # -fPIC enables Position Independent Code which is a requirement for producing
 # static binaries. Since *ALL* objects should be compiled with this flag, we'll
 # hijack the compiler binaries here with a custom script which unconditionally
-# embeds those flags regardless of what each individual application wants, as
-# opposed to e.g. relying on CFLAGS which might be ignored by the applications'
-# build scripts.
+# embeds those flags and filter unwanted ones regardless of what each individual
+# application wants, as opposed to e.g. relying on CFLAGS which might be ignored
+# by the applications' build scripts.
 ENV BASE_CFLAGS="-v -static --static -nostdinc -nostdinc++ -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -Wl,-static -L$TARGET_HOME/lib"
 ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET"
 
@@ -171,9 +172,8 @@ RUN export LIBUNWIND_FOLDER=libunwind-$LIBUNWIND_VERSION && \
   tar xzf $LIBUNWIND_SOURCE && rm $LIBUNWIND_SOURCE && \
   cd $LIBUNWIND_FOLDER && \
   # revert https://github.com/libunwind/libunwind/commit/f1684379dfaf8018d5d4c1945e292a56d0fab245
-  # use -lgcc because we don't have "gcc_s" here
-  # gcc_s is the it's the shared library counterpart of gcc_eh according to:
-  # https://gitlab.kitware.com/cmake/cmake/-/merge_requests/1460)
+  # use -lgcc because we don't have gcc_s.a from musl-cross-make
+  # gcc_s is the it's the shared library counterpart of gcc_eh according to https://gitlab.kitware.com/cmake/cmake/-/merge_requests/1460
   sed -e 's/-lgcc_s/-lgcc/' -i configure.ac && \
   autoreconf -i && \
   ./configure \
@@ -209,8 +209,9 @@ ENV JEMALLOC_OVERRIDE=$TARGET_HOME/lib/libjemalloc.a
 # ---- RocksDB
 # used in Substrate
 
+# only snappy is compiled due to https://github.com/paritytech/parity-common/blob/30a879f4401fa4eac7f4d70be1038d7933e215a1/kvdb-rocksdb/Cargo.toml#L22
+
 # This is the version used for rust-rocksdb v0.17.0
-# https://github.com/rust-rocksdb/rust-rocksdb/tree/v0.17.0/librocksdb-sys
 # Should the rust-rocksdb version used by Substrate change, revisit this
 ARG SNAPPY_VERSION=1.1.8
 
@@ -249,9 +250,12 @@ RUN cd /tmp && \
   cd ../.. && rm -rf gflags
 
 # This is the version used for rust-rocksdb v0.17.0
-# https://github.com/rust-rocksdb/rust-rocksdb/tree/v0.17.0/librocksdb-sys
 # Should the rust-rocksdb version used by Substrate change, revisit this
 ARG ROCKSDB_VERSION=6.20.3
+
+# We'll opt out of jemalloc and tcmalloc so that we'll have less components to
+# worry about (we just want the Polkadot binary to work right now); those
+# libraries could be re-enabled later
 
 RUN export ROCKSDB_FOLDER=rocksdb-$ROCKSDB_VERSION && \
   export ROCKSDB_SOURCE=v$ROCKSDB_VERSION.tar.gz && \
@@ -273,14 +277,14 @@ ENV ROCKSDB_STATIC=1 \
 # ---- Polkadot
 
 # unhijack the binaries because we'll not be compiling C directly anymore
-run mv $CC /rust-target-linker && \
-  rm $CXX $HIJACK_AR= $HIJACK_AS $HIJACK_LD $HIJACK_STRIP $HIJACK_CC $HIJACK_CPP $HIJACK_GNUCC $HIJACK_GNUCXX
+RUN mv $CC /target-compiler && \
+  rm $CXX $HIJACK_AR $HIJACK_AS $HIJACK_LD $HIJACK_STRIP $HIJACK_CC $HIJACK_CPP $HIJACK_GNUCC $HIJACK_GNUCXX
 
 # link-self-contained=no is used so that the rust compiler does not include the
-# target's c runtime when it's linking the executable; we do not want that
-# because we are using musl-cross-make's generated c runtime, which was already
-# used to compile all the libraries above
-RUN echo "[target.$RUST_TARGET]\nlinker = \"/rust-target-linker\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\",\"-C\",\"prefer-dynamic=no\",\"-C\",\"relocation-model=pic\"]" > $CARGO_HOME/config
+# build target's c runtime when it's linking the executable, because we'll be
+# using musl-cross-make's target c runtime instead, which was already used to
+# compile all the libraries above
+RUN echo "[target.$RUST_TARGET]\nlinker = \"/target-compiler\"\nrunner = \"target-compiler\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\",\"-C\",\"prefer-dynamic=no\",\"-C\",\"relocation-model=pic\"]" > $CARGO_HOME/config
 
 COPY . /app
 
