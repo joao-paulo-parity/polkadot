@@ -178,7 +178,7 @@ RUN export NCURSES_FOLDER=ncurses-$NCURSES_VERSION && \
   cd /tmp && curl -sqLO https://invisible-mirror.net/archives/ncurses/current/$NCURSES_SOURCE && \
   tar xzf $NCURSES_SOURCE && rm $NCURSES_SOURCE && \
   cd $NCURSES_FOLDER && \
-  ./configure
+  ./configure \
     --build=$HOST \
     --host=$TARGET \
     --enable-widec \
@@ -334,7 +334,7 @@ workdir /app
 run bash -c "RUST_BACKTRACE=full \
   RUSTC_WRAPPER= \
   WASM_BUILD_NO_COLOR=1 \
-  BINDGEN_EXTRA_CLANG_ARGS=\"-target $TARGET\" \
+  BINDGEN_EXTRA_CLANG_ARGS=\"--sysroot=$TARGET_HOME -target $TARGET\" \
   cargo build --target $RUST_TARGET --release --verbose 2>&1 | tee /tmp/log.txt"; \
   if [ -e /app/target/x86_64-unknown-linux-musl/release/polkadot ]; then \
     mv /app/target/x86_64-unknown-linux-musl/release/polkadot /tmp; \
