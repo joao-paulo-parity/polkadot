@@ -87,11 +87,11 @@ ENV LD=$CC
 
 # -fPIC enables Position Independent Code which is a requirement for producing
 # static binaries. Since *ALL* objects should be compiled with this flag, we'll
-# hijack the compilar binaries here with a custom script which unconditionally
+# hijack the compiler binaries here with a custom script which unconditionally
 # embeds those flags regardless of what each individual application wants, as
 # opposed to e.g. relying on CFLAGS which might be ignored by the applications'
 # build scripts.
-ENV BASE_CFLAGS="-v -static --static -nostdinc -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -L$TARGET_HOME/lib/libstdc++.a"
+ENV BASE_CFLAGS="-v -static --static -nostdinc -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -L$TARGET_HOME/lib"
 ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET -nostdinc++"
 
 copy ./generate_wrapper /generate_wrapper
@@ -288,20 +288,21 @@ ENV ROCKSDB_STATIC=1 \
   ROCKSDB_DISABLE_TCMALLOC=1
 
 
-# ---- Substrate
+# ---- Polkadot
 
-# -lrocksdb has to be added manually because the symbols are not added in the
+# The following directives are relevant for compile-time build tools (we are not
+# using clang to compile the output binaries)
+run $APT_INSTALL libclang-dev
+env CC_x86_64_unknown_linux_gnu=/usr/bin/gcc \
+  CXX_x86_64_unknown_linux_gnu=/usr/bin/g++ \
+  LD_x86_64_unknown_linux_gnu=/usr/bin/ld \
+  AR_x86_64_unknown_linux_gnu=/usr/bin/ar
+
+# -lrocksdb has to be added manually because the library is not added in the
 # compiler options by librocksdb-sys, apparently
 RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS -lrocksdb" > $CC && \
   /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS -lrocksdb" > $CXX && \
   echo "[target.$RUST_TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\"]" > $CARGO_HOME/config
-
-# For compile-time-only build tools, preserve this host's original compilers
-# since they are not included in the binary we'll compile
-ENV CC_x86_64_unknown_linux_gnu=/usr/bin/gcc \
-  CXX_x86_64_unknown_linux_gnu=/usr/bin/g++ \
-  LD_x86_64_unknown_linux_gnu=/usr/bin/ld \
-  AR_x86_64_unknown_linux_gnu=/usr/bin/ar
 
 copy . /app
 

@@ -8,24 +8,9 @@ args=()
 
 for arg in \"\$@\"; do
   case \"\$arg\" in
-    -Bdynamic|-dynamic|-shared*|-symbolic|-nodefaultlibs|-nostartfiles|-lstdc++) continue ;;
+    -Bdynamic|-dynamic|-shared*|-symbolic|-nodefaultlibs|-nostartfiles) continue ;;
     *.so|*.so.*) echo \"Detected dynamic object: \$@\" > /tmp/log2.txt; exit 1;;
   esac
-
-  # replace built-in rust target's runtime files with musl's
-  if [[ \"\$arg\" =~ ^/.+/([^.]*.o)\$ ]]; then
-    obj=\"\$TARGET_HOME/lib/\${BASH_REMATCH[1]}\"
-    if [[ -e \"\$obj\" ]]; then
-      args+=(\"\$obj\")
-      continue
-    fi
-  fi
-
-  # remove anything added by the rust compiler since we're adding what's needed
-  # ourselves
-  if [[ \"\$arg\" = *"/rustlib/\$TARGET/lib"* ]]; then
-    continue
-  fi
 
   args+=(\"\$arg\")
 done
