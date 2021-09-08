@@ -262,7 +262,7 @@ ENV ROCKSDB_STATIC=1 \
 
 # ---- Polkadot
 
-# The following directives are relevant for compile-time build tools (we are not
+# the following directives are relevant for compile-time build tools (we are not
 # using them in the output binary)
 run $APT_INSTALL libclang-dev libncurses-dev libffi-dev
 env CC_x86_64_unknown_linux_gnu=/usr/bin/gcc \
@@ -273,6 +273,10 @@ env CC_x86_64_unknown_linux_gnu=/usr/bin/gcc \
   LDFLAGS_x86_64_unknown_linux_gnu="-M" \
   AR_x86_64_unknown_linux_gnu=/usr/bin/ar
 
+# link-self-contained=no is used so that the rust compiler does not include the
+# target's c runtime when it's linking the executable; we do not want that
+# because we are using musl-cross-make's generated c runtime, which was already
+# used to compile all the libraries above
 RUN echo "[target.$RUST_TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\",\"-C\",\"prefer-dynamic=no\",\"-C\",\"relocation-model=pic\"]" > $CARGO_HOME/config
 
 copy . /app

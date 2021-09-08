@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# -nodefaultlibs and -nostartfiles will be ignored (they are usually only passed
+# in when the linker is called by the Rust compiler because we'll be using
+# musl-gcc for the linker and it includes the adequate files with those flags
+
 echo "#!/bin/bash
 
 set -eu
