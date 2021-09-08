@@ -89,18 +89,17 @@ ENV CC_EXE=$MUSL/bin/$TARGET-gcc \
 # build scripts.
 ENV BASE_CFLAGS="-v -static --static -nostdinc -nostdinc++ -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -Wl,-static -L$TARGET_HOME/lib"
 ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET"
-ENV LDFLAGS="-M -static -rpath-link $TARGET_HOME/lib --no-dynamic-linker -L$TARGET_HOME/lib"
 
 copy ./generate_wrapper /generate_wrapper
 
 RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS" > $CC && \
   chmod +x $CC && \
-  cp $CC $MUSL/bin/cc && \
-  cp $CC $MUSL/bin/gnu-gcc && \
+  ln -s $CC $MUSL/bin/cc && \
+  ln -s $CC $MUSL/bin/gnu-gcc && \
   /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS" > $CXX && \
   chmod +x $CXX && \
-  cp $CXX $MUSL/bin/c++ && \
-  cp $CXX $MUSL/bin/gnu-g++
+  ln -s $CC $MUSL/bin/c++ && \
+  ln -s $CC $MUSL/bin/gnu-g++
 
 
 # ---- ZLib
@@ -147,58 +146,6 @@ ENV OPENSSL_STATIC=1 \
   OPENSSL_INCLUDE_DIR=$TARGET_HOME/include \
   DEP_OPENSSL_INCLUDE=$TARGET_HOME/include \
   OPENSSL_LIB_DIR=$TARGET_HOME/lib
-
-
-# --- clang-sys dependencies
-# For bindgen of Subtrate dependencies
-
-ARG LIBFFI_VERSION=3.2.1
-
-RUN $APT_INSTALL texinfo sed
-
-RUN export LIBFFI_FOLDER=libffi-$LIBFFI_VERSION && \
-  export LIBFFI_SOURCE=$LIBFFI_FOLDER.tar.gz && \
-  cd /tmp && curl -sqO ftp://sourceware.org/pub/libffi/$LIBFFI_SOURCE && \
-  tar xzf $LIBFFI_SOURCE && rm $LIBFFI_SOURCE && \
-  cd $LIBFFI_FOLDER && \
-  # sed command makes the package install headers into $PREFIX/include instead of $PREFIX/lib/libffi-3.2.1/include
-  sed -e '/^includesdir/ s/$(libdir).*$/$(includedir)/' -i include/Makefile.in && \
-  sed -e '/^includedir/ s/=.*$/=@includedir@/' -e 's/^Cflags: -I${includedir}/Cflags:/' -i libffi.pc.in && \
-  ./configure \
-    --build=$HOST \
-    --host=$TARGET \
-    --target=$TARGET \
-    --enable-static \
-    --disable-shared \
-    --prefix=$TARGET_HOME && \
-  make && make install && \
-  cd .. && rm -rf $LIBFFI_FOLDER
-
-ARG NCURSES_VERSION=6.2-20210828
-
-RUN export NCURSES_FOLDER=ncurses-$NCURSES_VERSION && \
-  export NCURSES_SOURCE=$NCURSES_FOLDER.tgz && \
-  cd /tmp && curl -sqLO https://invisible-mirror.net/archives/ncurses/current/$NCURSES_SOURCE && \
-  tar xzf $NCURSES_SOURCE && rm $NCURSES_SOURCE && \
-  cd $NCURSES_FOLDER && \
-  ./configure \
-    --build=$HOST \
-    --host=$TARGET \
-    --enable-widec \
-    --without-ada \
-    --without-develop \
-    --without-progs \
-    --without-tests \
-    --without-cxx \
-    --without-cxx-binding \
-    --without-dlsym \
-    --without-tests \
-    --disable-rpath-hack \
-    --with-build-cc=/usr/bin/gcc \
-    --enable-static --disable-shared \
-    --prefix=$TARGET_HOME && \
-  make -j$(nproc) && make install && \
-  cd .. && rm -rf $NCURSES_FOLDER
 
 
 # ---- Jemalloc
@@ -316,8 +263,8 @@ ENV ROCKSDB_STATIC=1 \
 # ---- Polkadot
 
 # The following directives are relevant for compile-time build tools (we are not
-# using clang to compile the output binaries)
-run $APT_INSTALL libclang-dev
+# using them in the output binary)
+run $APT_INSTALL libclang-dev libncurses-dev libffi-dev
 env CC_x86_64_unknown_linux_gnu=/usr/bin/gcc \
   CFLAGS_x86_64_unknown_linux_gnu="-v" \
   CXX_x86_64_unknown_linux_gnu=/usr/bin/g++ \
@@ -326,9 +273,7 @@ env CC_x86_64_unknown_linux_gnu=/usr/bin/gcc \
   LDFLAGS_x86_64_unknown_linux_gnu="-M" \
   AR_x86_64_unknown_linux_gnu=/usr/bin/ar
 
-RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS" > $CC && \
-  /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS" > $CXX && \
-  echo "[target.$RUST_TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\",\"-C\",\"prefer-dynamic=no\",\"-C\",\"relocation-model=pic\"]" > $CARGO_HOME/config
+RUN echo "[target.$RUST_TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\",\"-C\",\"prefer-dynamic=no\",\"-C\",\"relocation-model=pic\"]" > $CARGO_HOME/config
 
 copy . /app
 
