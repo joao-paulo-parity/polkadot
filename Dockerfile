@@ -294,7 +294,7 @@ ENV ROCKSDB_STATIC=1 \
 # compiler options by librocksdb-sys, apparently
 RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS -lrocksdb" > $CC && \
   /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS -lrocksdb" > $CXX && \
-  echo "[target.$RUST_TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\"]" > $CARGO_HOME/config
+  echo "[target.$RUST_TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\"]" > $CARGO_HOME/config
 
 # For compile-time-only build tools, preserve this host's original compilers
 # since they are not included in the binary we'll compile
@@ -314,7 +314,7 @@ run bash -c "RUST_BACKTRACE=full \
   LZ4_COMPILE=1 \
   ZSTD_COMPILE=1 \
   BZ2_COMPILE=1 \
-  BINDGEN_EXTRA_CLANG_ARGS="-target $TARGET" \
+  BINDGEN_EXTRA_CLANG_ARGS=\"-target $TARGET\" \
   cargo build --target $RUST_TARGET --release --verbose 2>&1 | tee /tmp/log.txt"; \
   if [ -e /app/target/x86_64-unknown-linux-musl/release/polkadot ]; then \
     mv /app/target/x86_64-unknown-linux-musl/release/polkadot /tmp; \
