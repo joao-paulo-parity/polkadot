@@ -38,9 +38,7 @@ ENV PKG_CONFIG_ALL_STATIC=true \
 
 # ---- musl
 
-# A sane approach for settling on the GCC version is to read the source for the
-# musl-cross-make version you're targetting and set the GCC version here. For
-# instance, version 0.9.9 of musl-cross-make used GCC 9.2.0:
+# Default to the same GCC version as the one used by default in musl-cross-make 
 # https://github.com/richfelker/musl-cross-make/blob/75e6c618adc9dde2cdcd0522ef40adf75a6bffe7/Makefile#L6
 ARG GCC_MAJOR_VERSION=9
 ARG GCC_VERSION=$GCC_MAJOR_VERSION.2.0
@@ -48,19 +46,22 @@ ARG CROSS_MAKE_VERSION=0.9.9
 ENV MUSL=/usr/local/musl
 ENV TARGET_HOME=$MUSL/$TARGET
 
-# https://www.openwall.com/lists/musl/2017/12/21/1
-# If you build gcc with --enable-default-pie, musl libc.a will also end up as PIC by default.
+# --enable-default-pie: https://www.openwall.com/lists/musl/2017/12/21/1
+#   If you build gcc with --enable-default-pie, musl libc.a will also end up as PIC by default.
+# --enable-initfini-array: https://github.com/richfelker/musl-cross-make/commit/3398364d6e3251cd097024182a8cb9f667c23bda
 RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   export CROSS_MAKE_SOURCE=$CROSS_MAKE_FOLDER.zip && \
   cd /tmp && curl -Lsq https://github.com/richfelker/musl-cross-make/archive/v$CROSS_MAKE_VERSION.zip -o $CROSS_MAKE_SOURCE && \
   unzip -q $CROSS_MAKE_SOURCE && rm $CROSS_MAKE_SOURCE && \
   cd $CROSS_MAKE_FOLDER && \
-  echo "OUTPUT=$MUSL\nTARGET = $TARGET\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++\nGCC_CONFIG += --enable-default-pie\nGCC_CONFIG += --enable-initfini-array\nGCC_VER=$GCC_VERSION" | tee config.mak && \
+  echo "OUTPUT = $MUSL\nTARGET = $TARGET\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++\nGCC_CONFIG += --enable-default-pie\nGCC_CONFIG += --enable-initfini-array\nGCC_VER=$GCC_VERSION" | tee config.mak && \
   make -j$(nproc) && make install && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
 
 
 # ---- Compiler setup
+
+RUN find $MUSL/lib -name '*.so*' -delete
 
 RUN $APT_INSTALL git libstdc++-$GCC_MAJOR_VERSION-dev
 
@@ -73,14 +74,12 @@ ENV CC_EXE=$MUSL/bin/$TARGET-gcc \
   CPLUS_INCLUDE_PATH=$C_INCLUDE_PATH \
   PATH=$MUSL/bin:$PATH
 
-# use the compiler front-end as a linker, as recommended by musl; linker-only
-# flags can be passed through -Wl
+# use the compiler front-end as a linker so that it adds the appropriate flags
+# and options to the linker; linker-only flags can be passed through -Wl
 ENV LD=$CC
 
-# the GCC/G++ binaries from musl-cross-make already adds the relevant includes
-# and library paths to the arguments by default; since we're compiling for a
-# foreign target, nostdinc and nostdinc++ are used to ensure system-level
-# headers are not looked at.
+# since musl-gcc already adds the relevant includes, nostdinc and nostdinc++ are
+# used to ensure system-level headers are not looked at.
 
 # rpath-link is used to prioritize the libraries' location at link time
 
@@ -90,7 +89,7 @@ ENV LD=$CC
 # embeds those flags regardless of what each individual application wants, as
 # opposed to e.g. relying on CFLAGS which might be ignored by the applications'
 # build scripts.
-ENV BASE_CFLAGS="-v -static --static -nostdinc -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -Wl,--no-dynamic-linker -L$TARGET_HOME/lib"
+ENV BASE_CFLAGS="-v -static --static -nostdinc -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -L$TARGET_HOME/lib"
 ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET -nostdinc++"
 
 copy ./generate_wrapper /generate_wrapper
@@ -256,14 +255,13 @@ RUN export SNAPPY_FOLDER=snappy-$SNAPPY_VERSION && \
   cd /tmp && curl -sqLO https://github.com/google/snappy/archive/refs/tags/$SNAPPY_SOURCE && \
   tar xzf $SNAPPY_SOURCE && rm $SNAPPY_SOURCE && \
   cd $SNAPPY_FOLDER && mkdir build && cd build && \
-  cd build && \
   cmake \
     -DBUILD_SHARED_LIBS=0 \
     -DBUILD_STATIC_LIBS=1 \
     -DSNAPPY_BUILD_TESTS=0 \
     -DSNAPPY_BUILD_BENCHMARKS=0 \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX=$PREFIX
+    -DCMAKE_INSTALL_PREFIX=$TARGET_HOME \
     .. && \
   make && make install && \
   cd ../.. && rm -rf $SNAPPY_FOLDER
@@ -281,11 +279,10 @@ RUN cd /tmp && \
     -DGFLAGS_INSTALL_STATIC_LIBS=1 \
     -DBUILD_gflags_LIB=0 \
     -DCMAKE_INSTALL_PREFIX=$TARGET_HOME \
-    -CMAKE_BUILD_TYPE=Release \
     .. && \
   make && make install && \
   mv $TARGET_HOME/lib/libgflags_nothreads.a $TARGET_HOME/lib/libgflags.a && \
-  cd .. && rm -R gflags
+  cd ../.. && rm -rf gflags
 
 # This is the version used for rust-rocksdb v0.17.0
 # https://github.com/rust-rocksdb/rust-rocksdb/tree/v0.17.0/librocksdb-sys
@@ -315,8 +312,11 @@ ENV ROCKSDB_STATIC=1 \
 # using clang to compile the output binaries)
 run $APT_INSTALL libclang-dev
 env CC_x86_64_unknown_linux_gnu=/usr/bin/gcc \
+  CFLAGS_x86_64_unknown_linux_gnu="-v" \
   CXX_x86_64_unknown_linux_gnu=/usr/bin/g++ \
+  CXXFLAGS_x86_64_unknown_linux_gnu="-v" \
   LD_x86_64_unknown_linux_gnu=/usr/bin/ld \
+  LDFLAGS_x86_64_unknown_linux_gnu="-M" \
   AR_x86_64_unknown_linux_gnu=/usr/bin/ar
 
 # -lrocksdb has to be added manually because the library is not added in the
