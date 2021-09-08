@@ -57,6 +57,8 @@ RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   echo "OUTPUT = $MUSL\nTARGET = $TARGET\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++\nGCC_CONFIG += --enable-default-pie\nGCC_CONFIG += --enable-initfini-array\nGCC_VER=$GCC_VERSION" | tee config.mak && \
   make -j$(nproc) && make install && \
   ln -s $MUSL/bin/$TARGET-ar $MUSL/bin/ar && \
+  ln -s $MUSL/bin/$TARGET-as $MUSL/bin/as && \
+  ln -s $MUSL/bin/$TARGET-strip $MUSL/bin/strip && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
 
 
@@ -67,15 +69,13 @@ RUN $APT_INSTALL git libstdc++-$GCC_MAJOR_VERSION-dev
 ENV C_INCLUDE_PATH=$TARGET_HOME/include:$MUSL/lib/gcc/$TARGET/$GCC_VERSION/include
 
 ENV CC_EXE=$MUSL/bin/$TARGET-gcc \
+  LD_EXE=$MUSL/bin/$TARGET-ld \
   CXX_EXE=$MUSL/bin/$TARGET-g++ \
   CC=$MUSL/bin/gcc \
   CXX=$MUSL/bin/g++ \
+  LD=$MUSL/bin/ld \
   CPLUS_INCLUDE_PATH=$C_INCLUDE_PATH \
   PATH=$MUSL/bin:$PATH
-
-# use the compiler front-end as a linker so that it adds the appropriate flags
-# and options to the linker; linker-only flags can be passed through -Wl
-ENV LD=$CC
 
 # since musl-gcc already adds the relevant includes, nostdinc and nostdinc++ are
 # used to ensure system-level headers are not looked at.
@@ -90,16 +90,18 @@ ENV LD=$CC
 # build scripts.
 ENV BASE_CFLAGS="-v -static --static -nostdinc -nostdinc++ -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -L$TARGET_HOME/lib"
 ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET"
+ENV BASE_LDFLAGS="-M -rpath-link $TARGET_HOME/lib --no-dynamic-linker -L$TARGET_HOME/lib"
 
 copy ./generate_wrapper /generate_wrapper
 
 RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS" > $CC && \
   chmod +x $CC && \
-  cp $CC $LD && \
   cp $CC $MUSL/bin/cc && \
   /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS" > $CXX && \
   chmod +x $CXX && \
-  cp $CXX $MUSL/bin/c++
+  cp $CXX $MUSL/bin/c++ && \
+  /generate_wrapper "$LD_EXE $BASE_LDFLAGS" > $LD && \
+  chmod +x $LD
 
 
 # ---- ZLib
