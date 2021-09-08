@@ -96,8 +96,10 @@ copy ./generate_wrapper /generate_wrapper
 RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS" > $CC && \
   chmod +x $CC && \
   cp $CC $LD && \
+  cp $CC $MUSL/bin/cc && \
   /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS" > $CXX && \
-  chmod +x $CXX
+  chmod +x $CXX && \
+  cp $CXX $MUSL/bin/c++
 
 
 # ---- ZLib
