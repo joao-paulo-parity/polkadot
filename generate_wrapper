@@ -13,9 +13,15 @@ echo \"BEFORE \$@\" >> /tmp/args.txt
 args=()
 
 for arg in \"\$@\"; do
-  case \"\$arg\" in
+  if [ "\${arg:0:4}" = '-Wl,' ]; then
+    parsed_arg=\"\${arg:4}\"
+  else
+    parsed_arg=\"\$arg\"
+  fi
+
+  case \"\$parsed_arg\" in
     -Bsymbolic|-symbolic|-Bdynamic|-dynamic|-dy|-shared*|-nodefaultlibs|-nostartfiles|-call_shared) continue ;;
-    *.so|*.so.*) echo \"Detected dynamic object: \$@\" > /tmp/log2.txt; exit 1;;
+    *.so|*.so.*) echo \"Detected dynamic object: \$@\" > /tmp/log2.txt; exit 4;;
   esac
 
   args+=(\"\$arg\")

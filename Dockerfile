@@ -9,19 +9,20 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends"
 
 # https://wiki.gentoo.org/wiki/Embedded_Handbook/General/Introduction#Environment_variables
-ARG RUST_TARGET=x86_64-unknown-linux-musl
-ARG TARGET=x86_64-linux-musl
-ARG HOST=x86_64-linux-gnu
+ARG RUST_TARGET=x86_64-unknown-linux-musl \
+  TARGET=x86_64-linux-musl \
+  RUST_HOST=x86_64-unknown-linux-gnu \
+  HOST=x86_64-linux-gnu
 
 
-# ---- Rust toolchains for Substrate
+# ---- Rust toolchains
 
 RUN rustup target add $RUST_TARGET && \
   rustup toolchain install --profile minimal nightly && \
   rustup target add wasm32-unknown-unknown --toolchain nightly
 
 
-# --- Setup for building dependencies
+# --- Setup for building C/C++ dependencies
 
 RUN apt update && \
   $APT_INSTALL curl unzip cmake make build-essential wget pkg-config && \
@@ -40,11 +41,20 @@ ENV PKG_CONFIG_ALL_STATIC=true \
 
 # Default to the same GCC version as the one used by default in musl-cross-make 
 # https://github.com/richfelker/musl-cross-make/blob/75e6c618adc9dde2cdcd0522ef40adf75a6bffe7/Makefile#L6
-ARG GCC_MAJOR_VERSION=9
-ARG GCC_VERSION=$GCC_MAJOR_VERSION.2.0
-ARG CROSS_MAKE_VERSION=0.9.9
-ENV MUSL=/usr/local/musl
-ENV TARGET_HOME=$MUSL/$TARGET
+ARG GCC_MAJOR_VERSION=9 \
+  GCC_VERSION=$GCC_MAJOR_VERSION.2.0 \
+  CROSS_MAKE_VERSION=0.9.9 \
+  MUSL=/usr/local/musl
+
+ENV HIJACK_AR=$MUSL/bin/ar \
+  HIJACK_AS=$MUSL/bin/as \
+  HIJACK_LD=$MUSL/bin/ld \
+  HIJACK_STRIP=$MUSL/bin/strip \
+  HIJACK_CC=$MUSL/bin/cc \
+  HIJACK_CPP=$MUSL/bin/c++ \
+  HIJACK_GNUCC=$MUSL/bin/gnu-cc \
+  HIJACK_GNUCXX=$MUSL/bin/gnu-cxx \
+  TARGET_HOME=$MUSL/$TARGET
 
 # --enable-default-pie: https://www.openwall.com/lists/musl/2017/12/21/1
 #   If you build gcc with --enable-default-pie, musl libc.a will also end up as PIC by default.
@@ -56,10 +66,10 @@ RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   cd $CROSS_MAKE_FOLDER && \
   echo "OUTPUT = $MUSL\nTARGET = $TARGET\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++\nGCC_CONFIG += --enable-default-pie\nGCC_CONFIG += --enable-initfini-array\nGCC_VER=$GCC_VERSION" | tee config.mak && \
   make -j$(nproc) && make install && \
-  ln -s $MUSL/bin/$TARGET-ar $MUSL/bin/ar && \
-  ln -s $MUSL/bin/$TARGET-as $MUSL/bin/as && \
-  ln -s $MUSL/bin/$TARGET-ld $MUSL/bin/ld && \
-  ln -s $MUSL/bin/$TARGET-strip $MUSL/bin/strip && \
+  ln -s $MUSL/bin/$TARGET-ar $HIJACK_AR && \
+  ln -s $MUSL/bin/$TARGET-as $HIJACK_AS && \
+  ln -s $MUSL/bin/$TARGET-ld $HIJACK_LD && \
+  ln -s $MUSL/bin/$TARGET-strip $HIJACK_STRIP && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
 
 
@@ -94,16 +104,16 @@ copy ./generate_wrapper /generate_wrapper
 
 RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS" > $CC && \
   chmod +x $CC && \
-  ln -s $CC $MUSL/bin/cc && \
-  ln -s $CC $MUSL/bin/gnu-gcc && \
+  ln -s $CC $HIJACK_CC && \
+  ln -s $CC $HIJACK_GNUCC && \
   /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS" > $CXX && \
   chmod +x $CXX && \
-  ln -s $CC $MUSL/bin/c++ && \
-  ln -s $CC $MUSL/bin/gnu-g++
+  ln -s $CC $HIJACK_CPP && \
+  ln -s $CC $HIJACK_GNUCXX
 
 
 # ---- ZLib
-# Necessary to build OpenSSL and RocksDB
+# used in OpenSSL and RocksDB
 
 ARG ZLIB_VERSION=1.2.11
 
@@ -123,7 +133,7 @@ ENV Z_STATIC=1 \
 
 
 # ---- OpenSSL
-# Necessary to build Substrate
+# used in Substrate
 
 ARG OPENSSL_VERSION=1.0.2u \
   OPENSSL_ARCH=linux-x86_64
@@ -197,7 +207,7 @@ ENV JEMALLOC_OVERRIDE=$TARGET_HOME/lib/libjemalloc.a
 
 
 # ---- RocksDB
-# Used for the database of Substrate-based chains
+# used in Substrate
 
 # This is the version used for rust-rocksdb v0.17.0
 # https://github.com/rust-rocksdb/rust-rocksdb/tree/v0.17.0/librocksdb-sys
@@ -262,28 +272,21 @@ ENV ROCKSDB_STATIC=1 \
 
 # ---- Polkadot
 
-# the following directives are relevant for compile-time build tools (we are not
-# using them in the output binary)
-run $APT_INSTALL libclang-dev libncurses-dev libffi-dev
-env CC_x86_64_unknown_linux_gnu=/usr/bin/gcc \
-  CFLAGS_x86_64_unknown_linux_gnu="-v" \
-  CXX_x86_64_unknown_linux_gnu=/usr/bin/g++ \
-  CXXFLAGS_x86_64_unknown_linux_gnu="-v" \
-  LD_x86_64_unknown_linux_gnu=/usr/bin/ld \
-  LDFLAGS_x86_64_unknown_linux_gnu="-M" \
-  AR_x86_64_unknown_linux_gnu=/usr/bin/ar
+# unhijack the binaries because we'll not be compiling C directly anymore
+run mv $CC /rust-target-linker && \
+  rm $CXX $HIJACK_AR= $HIJACK_AS $HIJACK_LD $HIJACK_STRIP $HIJACK_CC $HIJACK_CPP $HIJACK_GNUCC $HIJACK_GNUCXX
 
 # link-self-contained=no is used so that the rust compiler does not include the
 # target's c runtime when it's linking the executable; we do not want that
 # because we are using musl-cross-make's generated c runtime, which was already
 # used to compile all the libraries above
-RUN echo "[target.$RUST_TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\",\"-C\",\"prefer-dynamic=no\",\"-C\",\"relocation-model=pic\"]" > $CARGO_HOME/config
+RUN echo "[target.$RUST_TARGET]\nlinker = \"/rust-target-linker\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\",\"-C\",\"prefer-dynamic=no\",\"-C\",\"relocation-model=pic\"]" > $CARGO_HOME/config
 
-copy . /app
+COPY . /app
 
-workdir /app
+WORKDIR /app
 
-run bash -c "RUST_BACKTRACE=full \
+RUN bash -c "RUST_BACKTRACE=full \
   RUSTC_WRAPPER= \
   WASM_BUILD_NO_COLOR=1 \
   BINDGEN_EXTRA_CLANG_ARGS=\"--sysroot=$TARGET_HOME -target $TARGET\" \
