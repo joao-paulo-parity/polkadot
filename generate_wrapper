@@ -6,12 +6,10 @@ set -eu
 
 args=()
 
-objs=()
 for arg in \"\$@\"; do
   case \"\$arg\" in
-    -Bdynamic|-dynamic|-static-pie|-pie|-shared*|-symbolic) continue ;;
+    -Bdynamic|-dynamic|-shared*|-symbolic|-nodefaultlibs|-lstdc++) continue ;;
     *.so|*.so.*) echo \"Arguments: $@\" > /tmp/log2.txt; exit 1;;
-    *.o|*.s) objs+=(\"$arg\");;
   esac
 
   # replace built-in rust target's runtime files with musl's
@@ -21,6 +19,12 @@ for arg in \"\$@\"; do
       args+=(\"\$obj\")
       continue
     fi
+  fi
+
+  # remove anything added by the rust compiler since we're adding what's needed
+  # ourselves
+  if [[ \"\$arg\" = *"/rustlib/\$TARGET/lib"* ]]; then
+    continue
   fi
 
   args+=(\"\$arg\")

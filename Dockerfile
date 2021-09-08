@@ -9,8 +9,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 ARG APT_INSTALL="apt install --assume-yes --quiet --no-install-recommends"
 
 # https://wiki.gentoo.org/wiki/Embedded_Handbook/General/Introduction#Environment_variables
-ARG TARGET=x86_64-unknown-linux-musl
-ARG HOST=x86_64-pc-linux-gnu
+ARG RUST_TARGET=x86_64-unknown-linux-musl
+ARG TARGET=x86_64-linux-musl
+ARG HOST=x86_64-linux-gnu
 
 
 # ---- Rust toolchains for Substrate
@@ -23,12 +24,16 @@ RUN rustup target add $TARGET && \
 # --- Setup for building dependencies
 
 RUN apt update && \
-  $APT_INSTALL curl unzip cmake make build-essential wget && \
+  $APT_INSTALL curl unzip cmake make build-essential wget pkg-config && \
   make --version && \
   curl --version && \
   unzip -v && \
   cmake --version && \
-  wget --version
+  wget --version && \
+  pkg-config --version
+
+ENV PKG_CONFIG_ALL_STATIC=true \
+  PKG_CONFIG_ALLOW_CROSS=true
 
 
 # ---- musl
@@ -43,15 +48,18 @@ ARG CROSS_MAKE_VERSION=0.9.9
 ENV MUSL=/usr/local/musl
 ENV TARGET_HOME=$MUSL/$TARGET
 
+# https://www.openwall.com/lists/musl/2017/12/21/1
+# If you build gcc with --enable-default-pie, musl libc.a will also end up as PIC by default.
 RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   export CROSS_MAKE_SOURCE=$CROSS_MAKE_FOLDER.zip && \
   cd /tmp && curl -Lsq https://github.com/richfelker/musl-cross-make/archive/v$CROSS_MAKE_VERSION.zip -o $CROSS_MAKE_SOURCE && \
   unzip -q $CROSS_MAKE_SOURCE && rm $CROSS_MAKE_SOURCE && \
   cd $CROSS_MAKE_FOLDER && \
-  echo "OUTPUT=$MUSL\nTARGET = $TARGET\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++\nGCC_VER=$GCC_VERSION" | tee config.mak && \
+  echo "OUTPUT=$MUSL\nTARGET = $TARGET\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++\nGCC_CONFIG += --enable-default-pie\nGCC_CONFIG += --enable-initfini-array\nGCC_VER=$GCC_VERSION" | tee config.mak && \
   make -j$(nproc) && make install && \
   ln -s /usr/local/musl/bin/$TARGET-strip /usr/local/musl/bin/musl-strip && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
+
 
 # ---- Compiler setup
 
@@ -83,7 +91,7 @@ ENV LD=$CC
 # embeds those flags regardless of what each individual application wants, as
 # opposed to e.g. relying on CFLAGS which might be ignored by the applications'
 # build scripts.
-ENV BASE_CFLAGS="-v -static --static -nostdinc -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker"
+ENV BASE_CFLAGS="-v -static --static -nostdinc -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -L$TARGET_HOME/lib/libstdc++.a"
 ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET -nostdinc++"
 
 copy ./generate_wrapper /generate_wrapper
@@ -92,6 +100,7 @@ RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS" > $CC && \
   chmod +x $CC && \
   /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS" > $CXX && \
   chmod +x $CXX
+
 
 # ---- ZLib
 # Necessary to build OpenSSL and RocksDB
@@ -278,22 +287,14 @@ ENV ROCKSDB_STATIC=1 \
   ROCKSDB_DISABLE_JEMALLOC=1 \
   ROCKSDB_DISABLE_TCMALLOC=1
 
+
 # ---- Substrate
-
-ENV PKG_CONFIG_ALL_STATIC=true \
-  PKG_CONFIG_ALLOW_CROSS=true
-
-run $APT_INSTALL pkg-config libclang-dev
-
-copy . /app
-
-workdir /app
 
 # -lrocksdb has to be added manually because the symbols are not added in the
 # compiler options by librocksdb-sys, apparently
 RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS -lrocksdb" > $CC && \
   /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS -lrocksdb" > $CXX && \
-  echo "[target.$TARGET]\nlinker = \"$CC\"" > $CARGO_HOME/config
+  echo "[target.$TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\"]" > $CARGO_HOME/config
 
 # For compile-time-only build tools, preserve this host's original compilers
 # since they are not included in the binary we'll compile
@@ -302,6 +303,10 @@ ENV CC_x86_64_unknown_linux_gnu=/usr/bin/gcc \
   LD_x86_64_unknown_linux_gnu=/usr/bin/ld \
   AR_x86_64_unknown_linux_gnu=/usr/bin/ar
 
+copy . /app
+
+workdir /app
+
 run bash -c "RUST_BACKTRACE=full \
   RUSTC_WRAPPER= \
   WASM_BUILD_NO_COLOR=1 \
@@ -309,7 +314,8 @@ run bash -c "RUST_BACKTRACE=full \
   LZ4_COMPILE=1 \
   ZSTD_COMPILE=1 \
   BZ2_COMPILE=1 \
-  cargo build --target $TARGET --release --verbose 2>&1 | tee /tmp/log.txt"; \
+  BINDGEN_EXTRA_CLANG_ARGS="-target $TARGET" \
+  cargo build --target $RUST_TARGET --release --verbose 2>&1 | tee /tmp/log.txt"; \
   if [ -e /app/target/x86_64-unknown-linux-musl/release/polkadot ]; then \
     mv /app/target/x86_64-unknown-linux-musl/release/polkadot /tmp; \
   fi; \
