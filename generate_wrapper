@@ -4,6 +4,8 @@ echo "#!/bin/bash
 
 set -eu
 
+echo \"BEFORE \${args[@]}\" >> /tmp/args.txt
+
 args=()
 
 for arg in \"\$@\"; do
@@ -14,6 +16,8 @@ for arg in \"\$@\"; do
 
   args+=(\"\$arg\")
 done
+
+echo \"AFTER \${args[@]}\" >> /tmp/args.txt
 
 $1 \"\${args[@]}\"
 "

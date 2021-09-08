@@ -57,7 +57,6 @@ RUN export CROSS_MAKE_FOLDER=musl-cross-make-$CROSS_MAKE_VERSION && \
   cd $CROSS_MAKE_FOLDER && \
   echo "OUTPUT=$MUSL\nTARGET = $TARGET\nCOMMON_CONFIG += CFLAGS=\"-g0 -Os\" CXXFLAGS=\"-g0 -Os\" LDFLAGS=\"-s\"\nGCC_CONFIG += --enable-languages=c,c++\nGCC_CONFIG += --enable-default-pie\nGCC_CONFIG += --enable-initfini-array\nGCC_VER=$GCC_VERSION" | tee config.mak && \
   make -j$(nproc) && make install && \
-  ln -s /usr/local/musl/bin/$TARGET-strip /usr/local/musl/bin/musl-strip && \
   cd .. && rm -rf $CROSS_MAKE_FOLDER
 
 
@@ -91,7 +90,7 @@ ENV LD=$CC
 # embeds those flags regardless of what each individual application wants, as
 # opposed to e.g. relying on CFLAGS which might be ignored by the applications'
 # build scripts.
-ENV BASE_CFLAGS="-v -static --static -nostdinc -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -L$TARGET_HOME/lib"
+ENV BASE_CFLAGS="-v -static --static -nostdinc -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -Wl,--no-dynamic-linker -L$TARGET_HOME/lib"
 ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET -nostdinc++"
 
 copy ./generate_wrapper /generate_wrapper
@@ -247,11 +246,34 @@ ENV JEMALLOC_OVERRIDE=$TARGET_HOME/lib/libjemalloc.a
 # ---- RocksDB
 # Used for the database of Substrate-based chains
 
+# This is the version used for rust-rocksdb v0.17.0
+# https://github.com/rust-rocksdb/rust-rocksdb/tree/v0.17.0/librocksdb-sys
+# Should the rust-rocksdb version used by Substrate change, revisit this
+ARG SNAPPY_VERSION=1.1.8
+
+RUN export SNAPPY_FOLDER=snappy-$SNAPPY_VERSION && \
+  export SNAPPY_SOURCE=$SNAPPY_VERSION.tar.gz && \
+  cd /tmp && curl -sqLO https://github.com/google/snappy/archive/refs/tags/$SNAPPY_SOURCE && \
+  tar xzf $SNAPPY_SOURCE && rm $SNAPPY_SOURCE && \
+  cd $SNAPPY_FOLDER && mkdir build && cd build && \
+  cd build && \
+  cmake \
+    -DBUILD_SHARED_LIBS=0 \
+    -DBUILD_STATIC_LIBS=1 \
+    -DSNAPPY_BUILD_TESTS=0 \
+    -DSNAPPY_BUILD_BENCHMARKS=0 \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=$PREFIX
+    .. && \
+  make && make install && \
+  cd ../.. && rm -rf $SNAPPY_FOLDER
+
+ENV SNAPPY_STATIC=1 \
+  SNAPPY_LIB_DIR=$TARGET_HOME/lib
+
 RUN cd /tmp && \
   git clone https://github.com/gflags/gflags.git && \
-  cd gflags && \
-  mkdir build && \
-  cd build && \
+  cd gflags && mkdir build && cd build && \
   cmake \
     -DBUILD_SHARED_LIBS=0 \
     -DBUILD_STATIC_LIBS=1 \
@@ -259,27 +281,26 @@ RUN cd /tmp && \
     -DGFLAGS_INSTALL_STATIC_LIBS=1 \
     -DBUILD_gflags_LIB=0 \
     -DCMAKE_INSTALL_PREFIX=$TARGET_HOME \
+    -CMAKE_BUILD_TYPE=Release \
     .. && \
   make && make install && \
   mv $TARGET_HOME/lib/libgflags_nothreads.a $TARGET_HOME/lib/libgflags.a && \
-  cd /tmp && rm -R /tmp/gflags
+  cd .. && rm -R gflags
 
 # This is the version used for rust-rocksdb v0.17.0
 # https://github.com/rust-rocksdb/rust-rocksdb/tree/v0.17.0/librocksdb-sys
-# Should the rust-rocksdb version used by Substrate change, this also needs to
-# be changed
+# Should the rust-rocksdb version used by Substrate change, revisit this
 ARG ROCKSDB_VERSION=6.20.3
 
 RUN export ROCKSDB_FOLDER=rocksdb-$ROCKSDB_VERSION && \
   export ROCKSDB_SOURCE=v$ROCKSDB_VERSION.tar.gz && \
   cd /tmp && curl -sqLO https://github.com/facebook/rocksdb/archive/refs/tags/$ROCKSDB_SOURCE && \
   tar xzf $ROCKSDB_SOURCE && rm $ROCKSDB_SOURCE && \
-  ls && \
   cd $ROCKSDB_FOLDER && \
   PORTABLE=1 DISABLE_JEMALLOC=1 make static_lib && \
   mv librocksdb.a $TARGET_HOME/lib && \
   mv include/* $TARGET_HOME/include && \
-  cd /tmp && rm -rf /tmp/rocksdb
+  cd .. && rm -rf $ROCKSDB_FOLDER
 
 ENV ROCKSDB_STATIC=1 \
   ROCKSDB_LIB_DIR=$TARGET_HOME/lib \
@@ -300,8 +321,8 @@ env CC_x86_64_unknown_linux_gnu=/usr/bin/gcc \
 
 # -lrocksdb has to be added manually because the library is not added in the
 # compiler options by librocksdb-sys, apparently
-RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS -lrocksdb" > $CC && \
-  /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS -lrocksdb" > $CXX && \
+RUN /generate_wrapper "$CC_EXE $BASE_CFLAGS -lrocksdb -lstdc++" > $CC && \
+  /generate_wrapper "$CXX_EXE $BASE_CXXFLAGS -lrocksdb -lstdc++" > $CXX && \
   echo "[target.$RUST_TARGET]\nlinker = \"$CC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\"]" > $CARGO_HOME/config
 
 copy . /app
@@ -311,10 +332,6 @@ workdir /app
 run bash -c "RUST_BACKTRACE=full \
   RUSTC_WRAPPER= \
   WASM_BUILD_NO_COLOR=1 \
-  SNAPPY_COMPILE=1 \
-  LZ4_COMPILE=1 \
-  ZSTD_COMPILE=1 \
-  BZ2_COMPILE=1 \
   BINDGEN_EXTRA_CLANG_ARGS=\"-target $TARGET\" \
   cargo build --target $RUST_TARGET --release --verbose 2>&1 | tee /tmp/log.txt"; \
   if [ -e /app/target/x86_64-unknown-linux-musl/release/polkadot ]; then \
