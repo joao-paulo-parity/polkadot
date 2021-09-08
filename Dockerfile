@@ -70,7 +70,6 @@ RUN $APT_INSTALL git libstdc++-$GCC_MAJOR_VERSION-dev
 ENV C_INCLUDE_PATH=$TARGET_HOME/include:$MUSL/lib/gcc/$TARGET/$GCC_VERSION/include
 
 ENV CC_EXE=$MUSL/bin/$TARGET-gcc \
-  LD_EXE=$MUSL/bin/$TARGET-ld \
   CXX_EXE=$MUSL/bin/$TARGET-g++ \
   CC=$MUSL/bin/gcc \
   CXX=$MUSL/bin/g++ \
@@ -88,9 +87,9 @@ ENV CC_EXE=$MUSL/bin/$TARGET-gcc \
 # embeds those flags regardless of what each individual application wants, as
 # opposed to e.g. relying on CFLAGS which might be ignored by the applications'
 # build scripts.
-ENV BASE_CFLAGS="-v -static --static -nostdinc -nostdinc++ -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -L$TARGET_HOME/lib"
+ENV BASE_CFLAGS="-v -static --static -nostdinc -nostdinc++ -static-libgcc -static-libstdc++ -fPIC -Wl,-M -Wl,-rpath-link,$TARGET_HOME/lib -Wl,--no-dynamic-linker -Wl,-static -L$TARGET_HOME/lib"
 ENV BASE_CXXFLAGS="$BASE_CFLAGS -I$TARGET_HOME/include/c++/$GCC_VERSION -I$TARGET_HOME/include/c++/$GCC_VERSION/$TARGET"
-ENV BASE_LDFLAGS="-M -rpath-link $TARGET_HOME/lib --no-dynamic-linker -L$TARGET_HOME/lib"
+ENV LDFLAGS="-M -static -rpath-link $TARGET_HOME/lib --no-dynamic-linker -L$TARGET_HOME/lib"
 
 copy ./generate_wrapper /generate_wrapper
 
