@@ -276,15 +276,29 @@ ENV ROCKSDB_STATIC=1 \
 
 # ---- Polkadot
 
-# unhijack the binaries because we'll not be compiling C directly anymore
-RUN mv $CC /target-compiler && \
+# libclang used for compile-time Rust build tools
+run $APT_INSTALL libclang-dev
+
+ENV RUST_TARGET_GCC_DIR=/usr/local/x86_64-linux-musl/bin
+ENV RUST_TARGET_GCC=$RUST_TARGET_GCC_DIR/musl-gcc \
+  PATH=$RUST_TARGET_GCC_DIR:$PATH
+
+# unhijack the binaries because we'll not be compiling C directly for the binary
+# (C will still be compiled for Rust build tools but we don't care about which
+# toolchain is used for that)
+RUN mkdir -p $RUST_TARGET_GCC_DIR && \
+  mv $CC $RUST_TARGET_GCC && \
   rm $CXX $HIJACK_AR $HIJACK_AS $HIJACK_LD $HIJACK_STRIP $HIJACK_CC $HIJACK_CPP $HIJACK_GNUCC $HIJACK_GNUCXX
+ENV CC=
+ENV CXX= 
 
 # link-self-contained=no is used so that the rust compiler does not include the
 # build target's c runtime when it's linking the executable, because we'll be
 # using musl-cross-make's target c runtime instead, which was already used to
 # compile all the libraries above
-RUN echo "[target.$RUST_TARGET]\nlinker = \"/target-compiler\"\nrunner = \"target-compiler\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\",\"-C\",\"prefer-dynamic=no\",\"-C\",\"relocation-model=pic\"]" > $CARGO_HOME/config
+# note: musl-gcc will automatically be picked up for our target, thus why we do
+# not need to specify a "runner" in the following configuration
+RUN echo "[target.$RUST_TARGET]\nlinker = \"$RUST_TARGET_GCC\"\nrustflags=[\"-C\",\"target-feature=+crt-static\",\"-C\",\"link-self-contained=no\",\"-C\",\"prefer-dynamic=no\",\"-C\",\"relocation-model=pic\"]" > $CARGO_HOME/config
 
 COPY . /app
 
