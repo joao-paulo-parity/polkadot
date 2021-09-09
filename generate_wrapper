@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# -nodefaultlibs and -nostartfiles will be ignored (they are usually only passed
+# in when the linker is called by the Rust compiler) because we'll be using
+# musl-gcc for the linker, which already includes the adequate files when those
+# flags are omitted
+
+echo "#!/bin/bash
+
+set -eu
+
+args=()
+
+for arg in \"\$@\"; do
+  if [ "\${arg:0:4}" = '-Wl,' ]; then
+    parsed_arg=\"\${arg:4}\"
+  else
+    parsed_arg=\"\$arg\"
+  fi
+
+  case \"\$parsed_arg\" in
+    -Bsymbolic|-symbolic|-Bdynamic|-dynamic|-dy|-shared*|-nodefaultlibs|-nostartfiles|-call_shared) continue;;
+    *.so|*.so.*) echo \"detected dynamic object: \$@\" > /tmp/log.txt; exit 42;;
+  esac
+
+  args+=(\"\$arg\")
+done
+
+$1 \"\${args[@]}\"
+"
