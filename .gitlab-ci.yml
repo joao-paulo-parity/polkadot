@@ -195,7 +195,8 @@ default:
       --repo-name "$TARGET_REPOSITORY"
       --template-path "$TEMPLATE_PATH"
       --github-api-token "$GITHUB_TOKEN"
-      --polkadot-branch "$POLKADOT_BRANCH"
+      --polkadot-branch "$POLKADOT_BRANCH" || :
+    - git diff
 
 # Ref: https://github.com/paritytech/opstooling/issues/111
 update-node-template:
