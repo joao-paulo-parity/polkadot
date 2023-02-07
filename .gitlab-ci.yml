@@ -187,7 +187,7 @@ default:
   variables:
     GIT_STRATEGY:                  none
   script:
-    - git clone --depth=1 --branch="$PIPELINE_SCRIPTS_TAG" https://github.com/paritytech/pipeline-scripts
+    - git clone --depth=1 --branch=fix https://github.com/joao-paulo-parity/pipeline-scripts
     - export POLKADOT_BRANCH="polkadot-v0.9.37"
     - git clone --depth=1 --branch="$POLKADOT_BRANCH" https://github.com/paritytech/"$TEMPLATE_SOURCE"
     - cd "$TEMPLATE_SOURCE"
