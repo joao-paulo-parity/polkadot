@@ -4,13 +4,15 @@
 {#- First pass to count #}
 {%- for pr in changes -%}
     {%- if pr.meta.B %}
-        {%- if pr.meta.B.value == 0 -%}
-        {#- We skip silent ones -#}
-        {%- else -%}
-            {%- if pr.meta.T and pr.meta.T.value == 0 %}
-{%- set_global misc_count = misc_count + 1 -%}
-            {%- endif -%}
-        {% endif -%}
+        {%- for meta in pr.meta.B -%}
+            {%- if meta.B.value == 0 -%}
+            {#- We skip silent ones -#}
+            {%- else -%}
+                {%- if pr.meta.T and pr.meta.T.value == 0 %}
+                    {%- set_global misc_count = misc_count + 1 -%}
+                {%- endif -%}
+            {% endif -%}
+        {%- endfor -%}
     {% endif -%}
 {% endfor -%}
 
@@ -24,13 +26,15 @@ There are other misc. changes. You can expand the list below to view them all.
 {#- The changes are sorted by merge date #}
 {%- for pr in changes | sort(attribute="merged_at") %}
     {%- if pr.meta.B and not pr.title is containing("ompanion") %}
-        {%- if pr.meta.B.value == 0 %}
-        {#- We skip silent ones -#}
-        {%- else -%}
-            {%- if pr.meta.T and pr.meta.T.value == 0 %}
+        {%- for meta in pr.meta.B -%}
+            {%- if meta.value == 0 %}
+            {#- We skip silent ones -#}
+            {%- else -%}
+                {%- if pr.meta.T and pr.meta.T.value == 0 %}
 - {{ m_c::change(c=pr) }}
-            {%- endif -%}
-        {% endif -%}
+                {%- endif -%}
+            {% endif -%}
+        {%- endfor -%}
     {% endif -%}
 {% endfor %}
 
